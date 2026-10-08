@@ -4,7 +4,7 @@
 
 ## What is left (in this order)
 
-1. **User, in the Cloudflare dashboard:** set a Workers AI spend alert and decide on Workers Paid (the free allocation is 10,000 neurons/day; a student at the daily cap uses about 2,600). I could not sign in to the dashboard, so neither is done.
+1. **User, in the Cloudflare dashboard:** decide on Workers Paid (the free allocation is 10,000 neurons/day; a student at the daily cap uses about 2,600). A $1 billing budget alert ("StudyFlow Workers AI spend alert ($1)", email, enabled) was created on 2026-10-08. It is account-wide: Cloudflare's budget alert has no per-product field.
 2. **Upstream issue:** `workers-ai-provider@4.0.0` doubles every streamed delta because Workers AI events now carry both OpenAI and native fields (`apps/api/src/lib/ai-binding.ts` works around it). Report it; remove the workaround when `test/unit/ai-binding.test.ts` ("the provider alone duplicates") starts failing.
 3. **Before a public launch to college students** ([docs/privacy.md](docs/privacy.md)): decide the minimum age and write terms; consider pinning storage to the EU (`jurisdiction("eu")`) before any real EU users exist; add a privacy policy page.
 4. **Manual checks nobody has done:** Safari and Firefox, screen readers (VoiceOver, NVDA) per docs/a11y.md, voice transcription quality.

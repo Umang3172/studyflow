@@ -1,5 +1,34 @@
 # Studyflow
 
+## The prompt
+
+The project started from this brief, given verbatim:
+
+```text
+I want to build an AI assistant for students(lets name it Studyflow). Explore the idea yourself, choose a useful small MVP and create a detailed implementation plan.
+Use the supplied Cloudflare documentation. Include Llama 3.3 on Workers AI, Workers, Workflows, the Agents SDK backed by Durable Objects, a Pages frontend, persistent memory, state, real-time chat and scheduled reminders. Consider voice if practical.
+Evaluate these repositories during planning, use what fits and record the chosen tools and coding guidance in the handoff:
+
+* https://github.com/mermaid-js/mermaid
+* https://github.com/d2lang/d2
+* https://github.com/DietrichGebert/ponytail
+* https://developers.cloudflare.com/agents/
+
+Create PLAN.md covering architecture, features, data flow, dependencies, runtime prompts, token budgets, security, tests and deployment. Create a short HANDOFF.md so the coding model can continue without rereading the full transcript.
+Start README.md with the project overview, architecture diagram and a collapsible appendix containing the entire available user/assistant project conversation verbatim, with secrets redacted. Maintain it throughout planning and coding, noting the latest captured stage.
+Include reported development token usage by model and phase: input, output and cached tokens where available. Keep application runtime usage separate. Mark missing figures as unavailable.
+Initialize Git, add .gitignore, commit the planning documents and push to the configured remote. If none exists, create a private studyflow repository using my authenticated GitHub account. If access is unavailable, finish locally and report the blocker.
+Make reasonable assumptions and document them. Stop before application implementation.
+```
+
+The build step followed with:
+
+```text
+Read PLAN.md and HANDOFF.md and build the MVP. Verify current APIs, keep the implementation simple and use compact prompts, relevant context, rolling summaries and validated tool calls. Update setup instructions, conversation history and reported token usage as you work.
+```
+
+## Overview
+
 Studyflow is an AI study coach for students, built on Cloudflare. A student pastes a syllabus and an exam date. Studyflow turns that into a day-by-day study plan (which the student approves), reminds them when each session starts, tutors them in real-time chat, quizzes them, and remembers their goals and weak topics across sessions. Push-to-talk voice dictation is optional.
 
 **Stack:** Llama 3.3 70B on Workers AI · Cloudflare Agents SDK (`AIChatAgent` on SQLite-backed Durable Objects) · Workflows · Agent scheduling (Durable Object alarms) · Workers · Pages (React + Vite) · Workers AI Deepgram Nova-3 for speech-to-text.
@@ -10,33 +39,15 @@ Studyflow is an AI study coach for students, built on Cloudflare. A student past
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  subgraph Browser["Student browser"]
-    UI["React SPA: chat, today, plans, memory"]
-  end
-  subgraph Pages["Cloudflare Pages"]
-    STATIC["Static assets"]
-    FN["Pages Function proxy<br/>/agents/* and /api/*"]
-  end
-  subgraph Worker["Worker: studyflow-api"]
-    ENTRY["Entry: signed cookie, Origin check, rate limits"]
-    SA["StudyAgent (AIChatAgent)<br/>Durable Object + SQLite<br/>chat · memory · state · reminders"]
-    VA["VoiceInputAgent<br/>speech-to-text"]
-    WF["StudyPlanWorkflow<br/>extract → allocate → approve → schedule"]
-  end
-  AI["Workers AI<br/>Llama 3.3 70B · Nova-3"]
-  UI --> STATIC
-  UI <-->|"WebSocket, same origin"| FN
-  FN -->|service binding| ENTRY
-  ENTRY -->|"getAgentByName(userId)"| SA
-  ENTRY -->|"getAgentByName(userId)"| VA
-  SA <-->|"runWorkflow / RPC"| WF
-  SA --> AI
-  WF --> AI
-  VA --> AI
-  SA -.->|"schedule() alarms"| SA
-```
+![Studyflow architecture: browser, Cloudflare Pages proxy, private Worker with per-student Durable Objects, a plan Workflow and a voice agent, and Workers AI](docs/architecture.svg)
+
+How a request travels:
+
+1. The browser opens a WebSocket and HTTPS calls to its own origin (Pages). A signed `sf_session` cookie identifies the anonymous student.
+2. The Pages Function forwards `/agents/*` and `/api/*` over a service binding. The Worker has no public URL.
+3. The Worker checks the cookie, the `Origin` header and rate limits, then reaches that student's Durable Object with `getAgentByName(userId)`.
+4. `StudyAgent` keeps chat, memory, state and reminders in its own SQLite, calls Llama 3.3, and starts `StudyPlanWorkflow` when a plan is requested. The plan waits for the student's approval before it schedules anything.
+5. Reminders and the daily check-in are Durable Object alarms (`schedule()`); they use no model call.
 
 | Document | Purpose |
 | --- | --- |
@@ -46,29 +57,9 @@ flowchart LR
 | [docs/a11y.md](docs/a11y.md) | Accessibility audit: method, findings, fixes, what still needs a human |
 | [docs/privacy.md](docs/privacy.md) | What is stored, where it goes, deletion, and decisions to make before launching to college students |
 | [apps/api/evals/run.mjs](apps/api/evals/run.mjs) | Golden-prompt evals for the real model, against the deployed app or a dev server (writes `docs/evals.md` with `--write`) |
-| [.github/workflows/ci.yml](.github/workflows/ci.yml) | CI: lint, types, 100 tests and build; Playwright E2E and axe accessibility checks |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml) | CI: lint, types, tests and build; Playwright E2E and axe accessibility checks |
 | [docs/dev-phases.json](docs/dev-phases.json) | Phase boundaries for the development token report |
 | [scripts/sync_readme_log.py](scripts/sync_readme_log.py) | Regenerates the stage line, token table and conversation appendix |
-
-## Status
-
-**Live:** https://studyflow-1ir.pages.dev (deployed 2026-10-08 on your Cloudflare account: Pages SPA + Function → private Worker `studyflow-api` → per-student Durable Objects, Workflows, Workers AI). The Worker has no public URL (`workers_dev: false`); only Pages is public. Everything is anonymous; each student is capped at 40 messages, 3 plans and 300 s of dictation per day.
-
-| Area | Verified how | Not verified |
-| --- | --- | --- |
-| Worker routing, cookies, origin checks, per-student isolation, read-only state | 9 integration tests; cross-origin delete refused in an E2E test | Rate limits under real load |
-| Chat, tools, approvals, caps, memory, deletion, server-side guards | 23 integration tests (mock model) plus the evals below on the real model | |
-| **Real Llama 3.3** (tool calls, dates, refusals, prompt injection) | `apps/api/evals/run.mjs` against the deployed app: **12/12** (see [docs/evals.md](docs/evals.md)); it ranged 8/11 to 12/12 while I fixed what it found, and varies by a case or so between runs | Long-run quality; non-English |
-| Deployed end to end | `apps/api/evals/smoke.mjs`: **10/10** (health, session, WebSocket through Pages, streamed reply without doubled words, "in 2 minutes" reminder fires, real Workflow extracts topics and ignores the grading lines, approval schedules sessions, deletion) | Closed-tab notifications (out of scope) |
-| Rolling summary | Unit and integration tests, and a real-model check: after one fold (586 in / 41 out tokens) the model still recalled a TA's name and a room number planted 6 turns earlier | Summary quality over very long chats |
-| Reminders and check-ins | Integration tests, E2E, and real alarms firing on the deployed app | |
-| Study plans (Workflow, allocator, approval, Mermaid chart) | Allocator and DST unit tests, workflow tests, E2E, the smoke test on the real model | `pause`/`resume`/`terminate` (not supported by `wrangler dev`) |
-| Voice dictation | Route, protocol handshake and caps (tests); you confirmed it on a real device | Safari/Chrome transcription quality is not recorded here |
-| End-to-end UI | 10 Playwright tests (onboarding, chat, a real reminder firing, plan approve/discard, chat-driven plan with approval, memory, two tabs, deletion, origin refusal) in Chrome locally and Chromium in CI | Safari and Firefox |
-| Accessibility | axe-core (WCAG 2.2 A/AA) on every screen in light and dark, desktop and phone; keyboard, 320 px reflow, reduced motion, 200% text. 3 real findings fixed ([docs/a11y.md](docs/a11y.md)) | Screen readers (VoiceOver, NVDA) |
-| CI | GitHub Actions runs lint, types, 132 tests, the build and the Playwright suite on every push and pull request | |
-
-Not done: a Workers AI **spend alert** and the **Workers Paid** plan. Both live in the Cloudflare dashboard (I could not sign in there). Do these before sharing the URL widely: the free allocation is 10,000 neurons per day, and a student at the daily cap uses about 2,600.
 
 ## Quick start
 
@@ -139,29 +130,6 @@ The first Worker deploy needs a workers.dev subdomain on the account (a one-time
 | `VOICE_ENABLED` | vars | `true` | Hides and rejects voice dictation when not `true` |
 | `MOCK_AI` | `.dev.vars` only | unset | `1` swaps Workers AI for the mock model. Never set it in production. |
 
-## How it keeps tokens low
-
-All numbers below were measured on Workers AI on 2026-10-08, not estimated.
-
-| Technique | Where | Effect |
-| --- | --- | --- |
-| **Compact prompts** | `lib/prompts.ts`, `lib/tools.ts` | The tutor system prompt is about 300 tokens and static (so it can be prefix-cached). Per-tool rules live in the tool descriptions and are sent only with the tool. Tool results are capped at 400 characters. |
-| **Slim tool schemas** | `lib/tools.ts` (`slim`, `modelSchema`) | The model sees names, types, enums and descriptions only; patterns and length limits are stripped from what it reads but **still enforced by zod on every call**. About 360 tokens saved on every model step. |
-| **Tools only when relevant** | `lib/tools.ts` (`toolsFor`) | Tool definitions (about 1,100 tokens for all six) are sent only when the recent messages look like a request for them (reminder, plan, quiz, schedule, cancel, a stated goal or weak topic); a pending approval keeps its tool. A plain explanation sends none. This also stopped the model writing tool calls into its answers as text. |
-| **Relevant context only** | `lib/context.ts`, `lib/memory.ts` | A per-turn block built from SQL: local time, courses, active plan, next 5 reminders and at most 15 memories (goal, weak topic, preference, strength; boosted by overlap with the current message), within 1,200 tokens. |
-| **Rolling summary** | `lib/history.ts` | The model sees a summary of older turns plus the newest turns. When verbatim history passes 8,000 estimated tokens, the oldest turns are folded into the summary in one short call, leaving about 4,000 verbatim, so the extra call happens once per roughly 4,000 tokens of new conversation. A deterministic fallback summary is used if the call fails; clearing the chat clears it. |
-| **Validated tool calls** | `lib/tools.ts`, `agents/study-agent.ts` | zod validates every input; then the server checks the data: ids exist, times are in the future and within 180 days, daily caps, 2 memories per turn. Three guards exist because the real model misbehaved: a reminder needs the student's own time words (`when`) to appear in the recent chat; after a rejected time it may not guess another in the same turn; a quiz result is refused until enough quiz turns have happened. Cancelling a reminder and starting a plan need your approval. |
-| **No model where code will do** | planner, reminders, check-ins | The schedule comes from a deterministic allocator (one LLM call per plan, to read the syllabus). Reminders and the daily check-in are templates. The plan tool reads a pasted syllabus from chat history instead of making the model copy it. |
-| **Hard limits** | `lib/budget.ts` | `maxOutputTokens` 1,024 on every call; estimated input never exceeds 20,000 of the 24,000-token window; daily caps per student. |
-
-| Measurement | Before | After |
-| --- | --- | --- |
-| Input tokens for a first-turn question (same prompt) | 1,650 | **381** |
-| Input tokens for the same 12 eval prompts, total | 31,593 | **17,892** |
-| Average chat turn on the real model (12 prompts, including multi-step tool turns) | n/a | **1,491 in / 71 out, about 54 neurons** |
-
-The token estimator divides characters by 3.0 (`DIVISOR` in `lib/budget.ts`). It was 3.5 and under-counted a real 4,521-character prompt by 22% (1,650 real tokens), so it was recalibrated; prose actually runs near 4 characters per token, so the estimate errs high, which is the safe direction for a context limit.
-
 ## Project layout
 
 ```text
@@ -193,9 +161,9 @@ These figures cover the AI models used to **build** Studyflow. They come from th
 | Build 7: commit and push, Playwright E2E | `claude-sonnet-5-5` | 23 | 46 | 45,629 | 13,172,032 | 33,798 |
 | Build 8: accessibility audit, CI, privacy notice | `claude-sonnet-5-5` | 25 | 50 | 48,814 | 15,544,284 | 28,658 |
 | Build 9: deploy, real-model evals and debugging (duplicate-delta fix, guards, tool routing, calibration) | `claude-sonnet-5-5` | 50 | 100 | 106,340 | 34,725,458 | 73,175 |
-| Build 10: final documentation and verification | `claude-sonnet-5-5` | 45 | 90 | 851,976 | 35,047,171 | 57,226 |
+| Build 10: final documentation and verification | `claude-sonnet-5-5` | 75 | 150 | 939,958 | 38,986,231 | 88,851 |
 | **Total** | `claude-opus-5-5` | **110** | **220** | **352,804** | **17,419,774** | **116,271** |
-| **Total** | `claude-sonnet-5-5` | **349** | **698** | **1,558,517** | **170,595,893** | **454,935** |
+| **Total** | `claude-sonnet-5-5` | **379** | **758** | **1,646,499** | **174,534,953** | **486,560** |
 | All phases | WebFetch page-summarizer model | unavailable | unavailable | unavailable | unavailable | unavailable |
 | All phases | Safety classifier passes | unavailable | unavailable | unavailable | unavailable | unavailable |
 <!-- dev-usage:end -->
@@ -204,7 +172,7 @@ These figures cover the AI models used to **build** Studyflow. They come from th
 
 Studyflow's own Workers AI calls, separate from development usage above. Each call writes one row (feature, model, input and output tokens, audio seconds, estimated neurons; never message content) to the student's `llm_usage` table, shown to that student under Settings → AI usage.
 
-**Measured** on the deployed app by `apps/api/evals/run.mjs` (12 golden prompts, 2026-10-08, final build; real token counts from Workers AI, neurons estimated from the published per-token rates; also in [docs/evals.md](docs/evals.md)):
+Measured on the deployed app by `apps/api/evals/run.mjs` (12 golden prompts, 2026-10-08, final build; real token counts from Workers AI, neurons estimated from the published per-token rates; also in [docs/evals.md](docs/evals.md)):
 
 | Feature | Model | Calls | Input tokens | Output tokens | Audio minutes | Neurons |
 | --- | --- | ---: | ---: | ---: | --- | ---: |
@@ -212,8 +180,6 @@ Studyflow's own Workers AI calls, separate from development usage above. Each ca
 | Plan topic extraction | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 1 | 190 | 72 | n/a | 20 |
 | Rolling summary | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 1 (separate check) | 586 | 41 | n/a | about 24 |
 | Voice dictation | `@cf/deepgram/nova-3` | unavailable | n/a | n/a | unavailable (you tested it on a device; those rows are in your own Settings) | unavailable |
-
-That is about 54 neurons per average chat turn (PLAN §10 estimated 242), so a student at the 40-message daily cap uses roughly 2,200 to 2,600 neurons, and the free 10,000 per day covers about four such students. Other numbers on this page (first-turn prompt sizes, the 12-prompt before/after totals, the 586/41 summary call) were read from the same `llm_usage` rows during debugging; the smoke test and ad-hoc debugging calls are not included in the table.
 
 ## Appendix
 
@@ -624,7 +590,7 @@ The plan is done and pushed. It's in your new private repo, [Umang3172/studyflow
   - Install Ponytail for coding sessions? (assumed no)
 ```
 
-#### Session 3: `50df2b13` (2026-10-08T10:55:30Z → 2026-10-08T15:42:23Z)
+#### Session 3: `50df2b13` (2026-10-08T10:55:30Z → 2026-10-08T16:35:48Z)
 
 **User** · 2026-10-08T10:55:30Z
 
@@ -1559,6 +1525,274 @@ _[tool activity omitted: Bash ×8]_
 ```
 
 _[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T15:45:26Z
+
+```text
+Everything except steps 5 and 8 is done and deployed. Both of those need your Cloudflare dashboard, which I can't sign into.
+
+**Live app:** https://studyflow-1ir.pages.dev. Pages is the only public part. The API Worker has no public URL and is reachable only through Pages. Everything is committed and pushed, and CI is green.
+
+## Your steps
+- **1–3. Commit, push, Wrangler login:** done.
+- **4–5. Real-model run:** 12/12 on the evals, which call real Llama 3.3 on the deployed app, and 10/10 on a deployed smoke test.
+  - **What the smoke test covered:** an "in 2 minutes" reminder that fired on time, plan generation from a syllabus, approval, and account deletion.
+  - **Subdomain you had to create:** your account needed a workers.dev subdomain before anything could deploy. That is the dashboard visit you did.
+  - **Not done:** I couldn't set a Workers AI spend alert or buy Workers Paid. Please do that before sharing the URL. A student at the 40-message daily cap uses about 2,200 neurons, and the free 10,000 per day covers roughly four such students.
+- **6. Deploy:** done. The Pages project name `studyflow` was taken, so the URL is `studyflow-1ir.pages.dev`.
+- **7. Smoke tests:** done, results in [docs/evals.md](docs/evals.md).
+- **9. Voice:** you verified it.
+
+## Bugs the real model exposed (the mock hid all of these)
+- **Doubled text:** every streamed token appeared twice, which corrupted tool calls. `workers-ai-provider@4.0.0` emits each delta twice because Workers AI now sends both formats. I added a workaround with a test that fails when upstream fixes it. You may want to report it upstream.
+- **Invented times:** "remind me to call my study group" got a made-up 6 PM. A reminder now needs the student's own time words to appear in the chat, and after a rejected time the model can't guess another in the same turn.
+- **Premature quiz scoring:** it logged a 0/5 result before asking any question. That is now refused.
+- **Junk memories and leaked tool calls:** it saved greetings as memories and sometimes wrote tool calls into its answers as plain text. Tools are now offered only when the conversation needs them, and leaked calls are stripped.
+- **Bare refusals:** "I can't help with that request." is now a refusal plus an offer of an outline or feedback.
+- **Lost-data race:** two concurrent first requests created two different anonymous students, so a second tab looked like missing data. Found because one E2E test failed about a quarter of the time under load; fixed.
+
+## Token savings (measured)
+- **First-turn prompt:** same question, 1,650 → 381 input tokens.
+- **12 eval prompts:** 31,593 → 17,892 input tokens in total.
+- **Estimator:** it under-counted by 22%, so I recalibrated it.
+- **Rolling summary:** works on the real model. It recalled a TA's name and a room number after the older turns were folded.
+
+## What you asked for
+- **Playwright E2E:** 10 functional tests plus an accessibility suite, 19 in total.
+- **Accessibility audit:** axe-core on every screen in light and dark, desktop and phone, plus keyboard, 320px reflow, reduced-motion and 200%-text checks. It found a real hover-contrast bug, two keyboard-unreachable scroll areas, and a missing page landmark; all fixed ([docs/a11y.md](docs/a11y.md)). Screen readers still need a person.
+- **GitHub Actions CI:** runs lint, types, 132 tests, the build and the Playwright suite on every push. Its first runs caught two issues my local runs missed, which I fixed.
+- **Privacy for college students:** an in-app notice plus [docs/privacy.md](docs/privacy.md). It lists decisions that remain before a public launch: minimum age and terms, and optionally pinning storage to the EU. I'm not a lawyer.
+- **README and tracking:** README, HANDOFF, PLAN and the spike log are updated, as are the dev token usage table and the conversation appendix. Runtime usage is now measured: about 54 neurons per average chat turn.
+
+## Q1: Pages vs Workers Static Assets
+It's moot now. The Pages path passed locally and in production, so Pages stays. For the record:
+
+| | **Pages (current)** | **Workers Static Assets** |
+| --- | --- | --- |
+| Pros | Meets your Pages requirement. Same-origin proxy keeps cookies first-party, with no CORS and no cross-domain WebSocket auth. The API Worker stays private behind the binding. Preview deployments per branch. | One deploy unit with no separate proxy hop. This is what Cloudflare now recommends for new projects. Simpler config. |
+| Cons | Two deploy units. Project names are global (`studyflow` was taken). Branch previews have different origins, so they would need allowing. Cloudflare steers new projects elsewhere, so long-term investment is in Static Assets. | Departs from the Pages brief. Requires migrating the SPA and function, plus a new deploy and CI path. |
+
+The migration path stays open if Pages limits ever bite.
+
+## Still open
+- **Not tested:** Safari, Firefox and screen readers.
+- **Upstream report:** the provider bug is yours to file if you want it fixed upstream.
+- **Spend alert and Workers Paid:** please set these in the dashboard before sharing the URL.
+```
+
+**User (system-generated)** · 2026-10-08T16:14:51Z
+
+```text
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   - Turn 1: "Read PLAN.md and HANDOFF.md and build the MVP. Verify current APIs, keep the implementation simple and use compact prompts, relevant context, rolling summaries and validated tool calls. Update setup instructions, conversation history and reported token usage as you work." (Studyflow: AI study coach on Cloudflare: Llama 3.3 on Workers AI, Agents SDK/Durable Objects, Workflows, Pages, memory, reminders, voice.)
+   - Turn 2: "what are the action items on me?"
+   - Turn 3: "1. verified the code, commit and push 2. approved for usage 3. Authorization granted to Wrangler. please do it 4 to 8 on your own. 9. verified. Q1 can you give me pros and cons of each. Q3 college students. Q4 no need to custom domain. Q5 no need now. yes, i want playwright E2E, github actions CI and accessibility audit." (Items 4–8 from my list: copy `.dev.vars`/run real model + evals and calibrate, deploy, set Workers AI spend alert/Workers Paid.)
+   - Turn 4: "Try again" (continue after an interrupted debugging step).
+   - Q1 (Pages vs Workers Static Assets/cross-origin) pros/cons was asked but NOT yet answered in text to the user; recorded in PLAN §20 as moot because S1 passed (Pages Function → service binding → Worker WebSocket works in production). The final reply to the user must still include pros/cons of each option and the outcome.
+
+2. Key Technical Concepts:
+   - Cloudflare: Workers, Durable Objects (SQLite, one per anonymous student via signed `sf_session` cookie → `getAgentByName`), Agents SDK 0.27 (`AIChatAgent`, `@callable`, `schedule`, `runWorkflow`, `withVoiceInput`), Workflows (`AgentWorkflow`, approval wait), Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`, Nova-3), Pages + Pages Function proxy over service binding, rate-limit bindings, `workers_dev:false`.
+   - AI SDK 7 (`streamText`, `jsonSchema`, `tool`, `isStepCount`, `pruneMessages`), `workers-ai-provider@4.0.0` (duplicate-delta bug), zod 4, React 19, Vite 8, Tailwind 4, Streamdown, Mermaid (lazy, strict), Vitest 4 + `@cloudflare/vitest-plugin` (workerd), Playwright 1.64 + axe-core 4.13, GitHub Actions (checkout@v7, setup-node@v7, upload-artifact@v7, runner `ubuntu-24.04`), oxlint/oxfmt.
+   - Design: compact prompts, relevant context (memory ranking, context block ≤1,200 tokens), rolling summary (fold at 8,000 est. tokens, keep ~4,000), validated tool calls (slim model-facing schemas + full zod validation, server guards, approvals), tool routing by intent (`toolsFor`), deterministic planner, per-student daily caps, token estimator DIVISOR=3.0 (calibrated: 4,521 chars = 1,650 real tokens).
+   - Mock model (`MOCK_AI=1`) for tests/E2E; real behaviour verified via `apps/api/evals/run.mjs` and `smoke.mjs` against the deployed app.
+
+3. Files and Code Sections (all under `/Users/umangsingh/Projects/Cloudflare assignment`):
+   - `apps/api/src/index.ts`: entry; `/api/health`, `/api/session` (mint signed cookie, rate-limited), `/api/account/delete`, `/agents/study*`, `/agents/voice*`; Origin checks; per-user instance via `getAgentByName`.
+   - `apps/api/src/agents/study-agent.ts`: StudyAgent. Key: `static options = { sendIdentityOnConnect: false }`; `validateStateChange` rejects non-server; `resetTurnState()` override clears `chat_summary`; `sanitizeMessageForPersistence` (user text ≤8000 chars; assistant text via `stripLeakedToolCalls`); `onChatMessage` with `planHistory` rolling summary, `toolsForTurn(kept)` (intent-routed tools, keeps tools used in last reply), `streamText({maxOutputTokens:1024, stopWhen:isStepCount(4), temperature:0.5})`; tool host guards: `rememberedThisTurn ≤2`, `reminderRefused` lock after a rejected time, `studentSaid(when)` quote check (last 2 user messages, normalised), `logQuizResult` needs ≥ max(2,total) assistant turns in last 40; `pastedMaterial()` requires ≥3 list items, `beginPlan(planRequest.parse({...rest, material}))`; reminders/check-in as `reminders` rows; `deleteAllData()` first `waitUntilStable({timeout:5000})` then cancels schedules/workflows and `destroy()`; `voiceSecondsLeft()/recordVoice()`.
+   - `apps/api/src/lib/ai-binding.ts`: `dedupeEvent`, `dedupeSse`, `withDedupedStreams(ai)` (Proxy over `run`) removing native duplicate fields (`response`, top-level `tool_calls`) when OpenAI `choices[0].delta` carries payload; ponytail comment says remove when canary test fails. `model.ts` uses `createWorkersAI({ binding: withDedupedStreams(env.AI) })(LLAMA, { sessionAffinity })`.
+   - `apps/api/src/lib/tools.ts`: `slim()`, `modelSchema()` (jsonSchema with zod validate), six tools with descriptions carrying per-tool rules, `needsApproval` for cancelReminder/startStudyPlan, `compact()` results ≤400 chars, `INTENT` regex map + `toolsFor(recentText, used)`.
+   - `apps/api/src/lib/prompts.ts`: compact `TUTOR_SYSTEM` (integrity line: refuse in one sentence then always offer outline/feedback/practice; quiz protocol; tools only when clearly needed, never write tool calls/JSON), extract/summary prompts.
+   - `apps/api/src/lib/budget.ts` (DIVISOR 3.0, BUDGET), `history.ts` (rolling summary), `context.ts`, `memory.ts`, `planner.ts` (learning priority, reviews ≤ half slots, tiers), `time.ts` (Intl, DST), `auth.ts`, `reminders.ts` (`reminderTime` rejects only `<= now`), `extract.ts`, `usage.ts`, `db.ts`, `mock-model.ts` (triggers incl. "invented reminder", "early quiz", plan phrase; createReminder includes `when`).
+   - `packages/shared/src/`: `schemas.ts` (`toolMemoryKind`, `createReminderInput` with `when`, `planToolInput` = pick courseName/examDate/minutesPerDay + optional `topics`), `leaked-calls.ts` (`stripLeakedToolCalls` for our tool names + lead-in line), `gantt.ts` (per-topic bars, `\p{M}` allowed), `state.ts`, `limits.ts`.
+   - `apps/api/wrangler.jsonc`: `workers_dev:false`, `preview_urls:false`, `ALLOWED_ORIGINS` = `https://studyflow-1ir.pages.dev`; `wrangler.mock.jsonc`: no `ai`, rate limits 1000, origins include localhost:5173/8788; `.dev.vars.example` includes ALLOWED_ORIGINS for local; `package.json` scripts: `dev:mock`, `dev:e2e` (persist-to .wrangler/e2e, --var MOCK_AI etc.), `typecheck` = `wrangler types && tsc --noEmit`, `evals`, `smoke`.
+   - `apps/api/evals/run.mjs` (12 golden prompts, usage totals, cleanup via account delete, origin derived from BASE) and `smoke.mjs` (10 checks incl. "in 2 minutes" reminder firing and plan workflow).
+   - `apps/api/test/`: unit (time, planner, auth, budget, history, prompts, schemas, gantt, runtime, reminders, tools, ai-binding, leaked-calls) and integration (routing 9, agent 17, plan 6 incl. eviction/wake test, guards, tool routing, storage sanitisation) = 132 tests.
+   - `apps/web/src/`: App.tsx (Suspense only around `<Chat>`; panel `aside` has `tabIndex={0}`), `lib/session.ts` (single-flight `ensureSession` with module-level `inFlight`), chat/ (Chat with `aria-busy`, tabIndex, MessageView applying `stripLeakedToolCalls`, Composer, Dictation), plans/ (PlanPanel, Gantt), onboarding/ (Onboarding in `<main>`, `PrivacyNote`), settings/, today/, memory/, `styles.css` (`.btn-primary` has `hover:bg-accent hover:opacity-90`), `functions/{agents,api}/[[path]].ts`, `public/_headers`, `playwright.config.ts`, `e2e/{helpers,app.spec,a11y.spec,env.d.ts}.ts` (19 tests pass; 3 skipped by design).
+   - `.github/workflows/ci.yml` (check-and-test job; e2e job with `playwright install --with-deps chromium`, artifact on failure), `.oxlintrc.json`, `.oxfmtrc.json`, `.claude/launch.json`.
+   - Docs: `README.md` (live URL, verified-status table, setup/run/test/deploy, "How it keeps tokens low" with measured numbers, runtime usage table, generated dev-usage table and conversation appendix), `HANDOFF.md` (state, decisions, lessons, deviations, gotchas, commands), `PLAN.md` (status + §20 answers), `docs/spikes.md`, `docs/evals.md` (generated, 12/12), `docs/a11y.md`, `docs/privacy.md`, `docs/dev-phases.json` (phases Build 1–10).
+
+4. Errors and fixes:
+   - npm resolver crash → `.npmrc legacy-peer-deps=true` + explicit peers.
+   - Vitest pool needs credentials for remote `ai` binding → `wrangler.mock.jsonc`.
+   - Rate limiter throttled tests (shared IP) → mock config limits 1000.
+   - Test failures from wrong expectations (DST test, "drops +7" planner policy → rewrote allocator priority; memory "remember" mock keyword; strict-mode locators; `send()` while streaming → wait for Stop button gone).
+   - Gantt label dropped Devanagari → allow `\p{M}`.
+   - React blank screen (Suspense above `useAgent`) → moved below.
+   - `cf_agent_identity` leaked userId → disabled identity on both agents + test.
+   - Plan tool made model copy syllabus / request sentence used as syllabus → server reads pasted syllabus (≥3 items).
+   - Deploy blocked by missing workers.dev subdomain → user opened dashboard; deployed with `workers_dev:false`.
+   - Doubled stream deltas → `ai-binding.ts` (initial post-deploy retest looked unfixed only because the new version hadn't propagated; instrumented deploy confirmed fix; diagnostics removed).
+   - Model misbehaviours → guards, routing, prompt edits (see section 2/summary above).
+   - CI: missing generated types; headless Chromium differences; axe mid-transition sampling.
+   - E2E two-tab flake → single-flight `ensureSession`; verified 24/24 repeat.
+   - Deleting account caused keep-alive SQL errors → `waitUntilStable` before destroy.
+   - zsh glob `rm -rf packages/*/node_modules` aborted chain → used explicit paths.
+   - User feedback: none corrective; user answered the subdomain prompt asking whether to create an application (answer: no, just opening the page suffices).
+
+5. Problem Solving:
+   - Built, deployed (https://studyflow-1ir.pages.dev; Worker `studyflow-api` private), and verified on real Workers AI: evals 12/12 (varied 8/11→12/12 during fixes; 11/12 once before integrity prompt fix), smoke 10/10, real rolling-summary check passed (586 in/41 out; recalled planted facts). Measured: first-turn input 1,650→381 tokens; 12-prompt chat input 31,593→17,892; ≈1,491 in/71 out/≈54 neurons per average turn.
+   - Latest CI run (commit `ad73fdc`) green for both jobs; Pages redeployed with session fix.
+   - Not done: Workers AI spend alert and Workers Paid (dashboard only, couldn't sign in); screen-reader and Safari/Firefox checks; upstream issue for workers-ai-provider duplication; launch decisions in docs/privacy.md (min age/terms, EU jurisdiction, privacy policy).
+
+6. All user messages:
+   - "Read PLAN.md and HANDOFF.md and build the MVP. Verify current APIs, keep the implementation simple and use compact prompts, relevant context, rolling summaries and validated tool calls. Update setup instructions, conversation history and reported token usage as you work."
+   - "what are the action items on me?"
+   - "1. verified the code, commit and push \n2. approved for usage \n3. Authorization granted to Wrangler \n\nplease do it 4 to 8 on your own\n9. verified\n\nQ1 can you give me pros and cons of each \nQ3 college students\nQ4 no need to custom domain\nQ5 no need now\n\nyes, i want playwright E2E, github actions CI and accessibility audit"
+   - AskUserQuestion answer: "i have opened the workers page, should i create a new application as no projects is currently present"
+   - "Try again"
+   - (current) the summarization request.
+
+7. Pending Tasks:
+   - Deliver the final reply to the user, which must include: pros/cons of each Q1 option (keep Pages + service binding vs cross-origin Pages→Worker with token auth vs Workers Static Assets) and that S1 passed so Pages stays; summary of what was done for steps 4–8; honest note that spend alert and Workers Paid were NOT done (dashboard login required; free allocation 10,000 neurons/day, ≈2,600 at a student's daily cap); mention deployed URL, test/eval/CI results, the real bugs found (duplicate deltas etc.), the E2E flake root cause, the workers.dev subdomain/Pages name suffix, items left for the user (spend alert/Workers Paid, upstream issue, launch decisions in docs/privacy.md, manual screen-reader/Safari checks).
+   - Optionally the README appendix/token table is regenerated by `scripts/sync_readme_log.py` on future turns (last sync captured through 2026-10-08T15:42:23Z; the final commit `ad73fdc` already includes it).
+
+8. Current Work:
+   Immediately before the summary request, I had just completed: fixing the two-tab E2E flake (single-flight `ensureSession` in `apps/web/src/lib/session.ts`), running all gates (check clean; 132 tests pass; 19 Playwright pass), rebuilding and redeploying Pages (`https://416a3ad9.studyflow-1ir.pages.dev`, production alias healthy), updating counts to 132 tests / 23 integration in README+HANDOFF, running `sync_readme_log.py`, committing ("fix: single-flight session request ... wake-from-eviction test", with Co-Authored-By trailer), pushing to `origin main` (`ee4912e..ad73fdc`), and confirming GitHub Actions run 37802958539 passed both jobs (Playwright E2E+axe 2m31s; lint/types/tests/build 1m52s).
+
+9. Optional Next Step:
+   None required beyond writing the final user-facing reply. That reply should answer the still-open request "Q1 can you give me pros and cons of each" (Pages+service binding: same-origin cookies, no CORS, satisfies the Pages requirement, verified working in production, but extra proxy hop and Pages Functions limits; cross-origin Worker + token auth: no proxy hop and independent deploys, but needs custom domain/CORS/cross-site WebSocket auth and token handling; Workers Static Assets: simplest single deploy and Cloudflare's recommended path for new projects, but deviates from the brief's Pages requirement), and report the outcome and remaining user action items listed under Pending Tasks. Do not start new work without the user's confirmation.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/umangsingh/.claude/projects/-Users-umangsingh-Projects-Cloudflare-assignment/50df2b13-c683-404f-a575-5485affc0513.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
+
+The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them.
+```
+
+**Harness notice** · 2026-10-08T16:13:38Z
+
+```text
+<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>
+```
+
+**User (system-generated)** · 2026-10-08T16:13:38Z
+
+```text
+<command-name>/compact</command-name>
+            <command-message>compact</command-message>
+            <command-args></command-args>
+```
+
+**User (system-generated)** · 2026-10-08T16:14:51Z
+
+```text
+<local-command-stdout>Compacted </local-command-stdout>
+```
+
+**User** · 2026-10-08T16:25:09Z
+
+```text
+Open my Cloudflare dashboard and set up a ""Workers AI spending alert at 1 USD"" for the account/project used by StudyFlow.
+
+Please make the change yourself, verify it’s enabled, and tell me once it’s done. Don’t change anything else.
+```
+
+_[tool activity omitted: mcp__Claude_Browser__navigate ×1, mcp__Claude_Browser__computer ×1]_
+
+**Assistant** · 2026-10-08T16:25:39Z
+
+```text
+I couldn't set the alert. The in-app browser isn't signed in to Cloudflare, so it opened the sign-in page. I can't type your password, and I haven't changed anything.
+
+Pick one and I'll finish it:
+- **Sign in here:** log in once in the in-app browser pane, which is showing the Cloudflare login page. Tell me when you're in and I'll create the $1 alert and check that it's enabled.
+- **Use your Chrome:** say "use Chrome" and I'll do it in your real Chrome, where you're likely already signed in.
+
+Either way I'll only touch the notification setting. If the account turns out to have more than one Cloudflare account, I'll use the one that owns the `studyflow-api` Worker.
+```
+
+**User** · 2026-10-08T16:29:55Z
+
+```text
+use chrome
+
+also in readme, keep the prompt given at the top and remove the analysis you have done. 
+and make the architecture visually good
+```
+
+_[tool activity omitted: ToolSearch ×1, Bash ×1, mcp__claude-in-chrome__tabs_context_mcp ×1, Read ×1, mcp__claude-in-chrome__navigate ×1, mcp__claude-in-chrome__computer ×1]_
+
+**Assistant** · 2026-10-08T16:30:09Z
+
+```text
+Signed in (redirected to the account's notifications page). Letting it load.
+```
+
+_[tool activity omitted: mcp__claude-in-chrome__computer ×4]_
+
+**Assistant** · 2026-10-08T16:30:18Z
+
+```text
+"Billing budget alert" is the one ("alert when spending on a product approaches the configured budget"). Selecting it.
+```
+
+_[tool activity omitted: mcp__claude-in-chrome__computer ×2]_
+
+**Assistant** · 2026-10-08T16:30:22Z
+
+```text
+The URL changed to the create page; waiting for it to render.
+```
+
+_[tool activity omitted: mcp__claude-in-chrome__computer ×13]_
+
+**Assistant** · 2026-10-08T16:30:43Z
+
+```text
+Form is complete. Saving.
+```
+
+_[tool activity omitted: mcp__claude-in-chrome__computer ×3, Bash ×3, Write ×1, mcp__Claude_Browser__navigate ×1, mcp__Claude_Browser__computer ×1]_
+
+**Assistant** · 2026-10-08T16:33:02Z
+
+```text
+Alert is saved and enabled. Now checking the full architecture diagram renders properly before updating the README.
+```
+
+_[tool activity omitted: mcp__Claude_Browser__javascript_tool ×2, mcp__Claude_Browser__computer ×1]_
+
+**Assistant** · 2026-10-08T16:33:09Z
+
+```text
+Diagram reads well; one flaw: the legend's right-hand note overlaps "Workers AI models". Removing it.
+```
+
+_[tool activity omitted: Bash ×6, mcp__claude-in-chrome__tabs_close_mcp ×1]_
+
+**Assistant** · 2026-10-08T16:33:52Z
+
+```text
+The $1 spend alert is created and shows as Enabled, but it covers the whole account, not just Workers AI. The README and architecture diagram are updated and not committed yet.
+
+## Spend alert
+I created it in your Cloudflare dashboard using your signed-in Chrome.
+- **Name:** "StudyFlow Workers AI spend alert ($1)".
+- **Type and budget:** "Billing budget alert", $1 USD.
+- **Recipient:** `[REDACTED-EMAIL]`, your account email, by email.
+- **Where to check it:** Notifications → Alerts, listed under Billing / Billing budget alert with status Enabled.
+- **Account-wide:** the form has no product field, so it can't be limited to Workers AI. Workers AI is StudyFlow's only paid usage, so in practice it still watches that spend. If you later add other paid products, they'll count toward the $1 too.
+- **Plan:** I didn't touch Workers Paid, and I changed nothing else in the dashboard.
+
+## README
+- **Prompt at the top:** the original brief is now the first thing in the README, word for word. The one-line build request that followed is under it.
+- **Analysis removed:** I took out the "Status" verification table, the "How it keeps tokens low" section with its before/after numbers, and the commentary under the runtime usage table. The setup instructions and the development and runtime token tables stay.
+- **What I kept:** the conversation appendix is the verbatim record you asked for, so it still contains those earlier write-ups. The docs table also still links to `docs/evals.md`, `docs/a11y.md` and `docs/spikes.md`. Say if you want those links or the technique descriptions back or gone.
+- **Architecture:** a new diagram, [docs/architecture.svg](docs/architecture.svg), replaces the Mermaid one. It has four numbered layers (browser, Pages, Worker with its Durable Objects and plan workflow, Workers AI), with the request path labelled on the arrows and a legend. The README has a five-step "how a request travels" list under it. I rendered it in the browser and fixed an overlapping legend note.
+- **HANDOFF.md:** now records that the alert exists and that only the Workers Paid decision is left.
+
+I haven't committed or pushed any of this. Say the word and I'll commit and push.
+```
+
+**User** · 2026-10-08T16:35:45Z
+
+```text
+push it, verified the changes
+```
+
+_[tool activity omitted: Bash ×1]_
 
 <!-- conversation:end -->
 
