@@ -33,14 +33,19 @@ export const memoryKind = z.enum(["goal", "preference", "weak_topic", "strength"
 export type MemoryKind = z.infer<typeof memoryKind>;
 
 // --- chat tool inputs (kept small: they are sent to the model on every turn) ---
+// `fact` stays valid in storage but is not offered to the model: it kept saving greetings and small talk.
+export const toolMemoryKind = z.enum(["goal", "preference", "weak_topic", "strength"]);
 export const rememberInput = z.object({
-  kind: memoryKind,
+  kind: toolMemoryKind,
   content: text(LIMITS.memoryChars),
   course: text(LIMITS.courseNameChars).optional(),
 });
 export const createReminderInput = z.object({
   title: text(LIMITS.reminderTitleChars),
   localDateTime,
+  // The student's own words for the time. The server checks they really appear in the recent chat, so the model
+  // cannot invent a time the student never gave.
+  when: text(60).describe("the student's exact words for the time, e.g. tomorrow at 7pm"),
 });
 export const listUpcomingInput = z.object({ days: z.coerce.number().int().min(1).max(30).default(7) });
 export const cancelReminderInput = z.object({ reminderId: id });
@@ -66,7 +71,8 @@ export type PlanRequest = z.infer<typeof planRequest>;
 
 // Chat-tool variant: the model passes at most a short topic list. A long pasted syllabus is read by the server from
 // the chat history, so the model never has to copy up to 12,000 characters into a tool call.
-export const planToolInput = planRequest.omit({ material: true }).extend({
+// Session length and start time are left to defaults here (45 min, 19:00); the Plan form exposes them.
+export const planToolInput = planRequest.pick({ courseName: true, examDate: true, minutesPerDay: true }).extend({
   topics: z.string().trim().min(10).max(600).optional(),
 });
 

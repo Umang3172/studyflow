@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Golden-prompt evals against a RUNNING API Worker with the real model (PLAN §14, "LLM evals").
 //
-//   npm run dev -w apps/api          # real Workers AI; needs `wrangler login`
-//   node apps/api/evals/run.mjs      # or: npm run evals -w apps/api -- --write
+//   node apps/api/evals/run.mjs https://studyflow.pages.dev --write     # the deployed app (real Workers AI)
+//   node apps/api/evals/run.mjs                                         # http://localhost:8787 (dev server with real AI)
 //
+// Local `wrangler dev` with the real AI binding needs a registered workers.dev subdomain; the deployed app does not.
 // Each case uses a fresh anonymous student (UTC timezone) so cases cannot influence each other. The checks are
 // deliberately simple heuristics: they catch regressions in tool use and prompt rules, not subtle quality.
 // Needs Node 22+ (global WebSocket with header support). Spends Workers AI neurons: about 20 model calls.
@@ -11,8 +12,11 @@
 import { writeFileSync } from "node:fs";
 
 const BASE = process.argv.find((a) => a.startsWith("http")) ?? "http://localhost:8787";
-const ORIGIN = "http://localhost:5173";
+const url = new URL(BASE);
+// The Worker only accepts WebSockets from its allowed origins: the Pages origin when deployed, the Vite origin locally.
+const ORIGIN = process.env.EVAL_ORIGIN ?? (url.hostname === "localhost" ? "http://localhost:5173" : url.origin);
 const WRITE = process.argv.includes("--write");
+const usage = []; // per-case rows from each student's llm_usage, summed in the report
 const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
 async function student() {
@@ -50,19 +54,29 @@ async function student() {
   };
   const s = {
     call,
-    close: () => ws.close(),
+    async close() {
+      try {
+        usage.push(...(await call("getUsage")).rows);
+      } catch {
+        /* usage is best effort */
+      }
+      ws.close();
+      // Remove the throwaway student (chat, memories, plans, reminders) from the target environment.
+      await fetch(`${BASE}/api/account/delete`, { method: "POST", headers: { cookie, origin: ORIGIN } }).catch(() => undefined);
+    },
     async chat(text) {
       const id = crypto.randomUUID();
       const messages = [{ id: crypto.randomUUID(), role: "user", parts: [{ type: "text", text }] }];
       ws.send(JSON.stringify({ type: "cf_agent_use_chat_request", id, init: { method: "POST", body: JSON.stringify({ messages }) } }));
       await waitFor((f) => f.type === "cf_agent_use_chat_response" && f.id === id && f.done);
       const chunks = frames.filter((f) => f.type === "cf_agent_use_chat_response" && f.id === id && f.body).map((f) => JSON.parse(f.body));
+      const ofType = (type) => chunks.filter((c) => c.type === type);
       return {
-        text: chunks
-          .filter((c) => c.type === "text-delta")
+        text: ofType("text-delta")
           .map((c) => c.delta)
           .join(""),
-        tools: chunks.filter((c) => c.type === "tool-input-available").map((c) => ({ name: c.toolName, input: c.input })),
+        tools: ofType("tool-input-available").map((c) => ({ name: c.toolName, input: c.input })),
+        results: ofType("tool-output-available").map((c) => c.output), // what the server accepted or refused
       };
     },
     upcoming: () =>
@@ -131,11 +145,23 @@ const CASES = [
     },
   ],
   [
-    "quiz: one question at a time",
+    "quiz: one question, no result logged yet",
     async (s) => {
       const r = await s.chat("Quiz me on deadlocks.");
       const qs = (r.text.match(/\?/g) ?? []).length;
-      return [qs >= 1 && qs <= 2 && !/question\s*2|\b2\.\s/i.test(r.text), `question marks=${qs}`];
+      const attempted = r.tools.some((t) => t.name === "logQuizResult");
+      const accepted = r.results.some((o) => o?.ok === true && "memory" in o); // only a logged result counts as a failure
+      return [
+        qs >= 1 && qs <= 2 && !accepted && !/question\s*2|\b2\.\s/i.test(r.text),
+        `question marks=${qs}, model tried to log early=${attempted}, server accepted=${accepted}`,
+      ];
+    },
+  ],
+  [
+    "small talk: no tools",
+    async (s) => {
+      const r = await s.chat("Hi! Say hello in five words.");
+      return [r.tools.length === 0 && r.text.length > 0, `tools=${r.tools.map((t) => t.name).join(",") || "none"}`];
     },
   ],
   [
@@ -181,12 +207,28 @@ for (const [name, run] of CASES) {
   } catch (e) {
     rows.push({ name, ok: false, note: `error: ${e.message}` });
   } finally {
-    s.close();
+    await s.close();
   }
   console.log(`${rows.at(-1).ok ? "PASS" : "FAIL"}  ${name}  ${rows.at(-1).note}`);
 }
 
 const passed = rows.filter((r) => r.ok).length;
+const total = (f) =>
+  usage
+    .filter((u) => u.feature === f)
+    .reduce((a, u) => ({ calls: a.calls + u.calls, input: a.input + u.input_tokens, output: a.output + u.output_tokens, neurons: a.neurons + u.neurons }), {
+      calls: 0,
+      input: 0,
+      output: 0,
+      neurons: 0,
+    });
+const usageRows = ["chat", "summary", "plan_extract"].map((f) => ({ f, ...total(f) })).filter((r) => r.calls);
+const sum = usageRows.reduce((a, r) => ({ calls: a.calls + r.calls, input: a.input + r.input, output: a.output + r.output, neurons: a.neurons + r.neurons }), {
+  calls: 0,
+  input: 0,
+  output: 0,
+  neurons: 0,
+});
 const report = `# LLM evals
 
 Run: ${new Date().toISOString()} against ${BASE} (model: @cf/meta/llama-3.3-70b-instruct-fp8-fast). Pass rate: **${passed}/${rows.length}** (${Math.round((100 * passed) / rows.length)}%). Target: at least 85% on reminder cases.
@@ -194,6 +236,15 @@ Run: ${new Date().toISOString()} against ${BASE} (model: @cf/meta/llama-3.3-70b-
 | Case | Result | Note |
 | --- | --- | --- |
 ${rows.map((r) => `| ${r.name} | ${r.ok ? "pass" : "FAIL"} | ${String(r.note).replace(/\|/g, "/").replace(/\n/g, " ")} |`).join("\n")}
+
+## Measured Workers AI usage for this run
+
+Read from each student's \`llm_usage\` table (real token counts reported by Workers AI) just before the student was deleted. Neurons are estimates from published per-token rates.
+
+| Feature | Calls | Input tokens | Output tokens | Neurons (est.) |
+| --- | ---: | ---: | ---: | ---: |
+${usageRows.map((r) => `| ${r.f} | ${r.calls} | ${r.input.toLocaleString()} | ${r.output.toLocaleString()} | ${Math.round(r.neurons).toLocaleString()} |`).join("\n")}
+| **Total** | **${sum.calls}** | **${sum.input.toLocaleString()}** | **${sum.output.toLocaleString()}** | **${Math.round(sum.neurons).toLocaleString()}** |
 `;
 console.log(`\n${passed}/${rows.length} passed`);
 if (WRITE) writeFileSync(new URL("../../../docs/evals.md", import.meta.url), report);

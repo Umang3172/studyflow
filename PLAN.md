@@ -768,12 +768,12 @@ GitHub Actions: `npm ci` â†’ `npm run check` (oxlint, oxfmt `--check`, `tsc`) â†
 
 ## 20. Open questions
 
-Non-blocking; defaults are assumed in brackets.
+Answered by the user on 2026-10-08.
 
-| ID | Question |
-| --- | --- |
-| Q1 | Should we move to Workers Static Assets if spike S1 fails, or keep Pages with cross-origin auth? [keep Pages and use cross-origin auth] |
-| Q2 | Is device-only anonymous identity acceptable for the first release? [yes] |
-| Q3 | Will the app be used by minors or institutions with data-processing requirements? [assume possibly minors; collect no PII] |
-| Q4 | Custom domain for production? [`studyflow.pages.dev`] |
-| Q5 | Install the Ponytail plugin for coding sessions? [no; guidance only] |
+| ID | Question | Answer |
+| --- | --- | --- |
+| Q1 | Should we move to Workers Static Assets if spike S1 fails, or keep Pages with cross-origin auth? | Moot: S1 passed, locally and in production. Pages stays. |
+| Q2 | Is device-only anonymous identity acceptable for the first release? | Yes (assumed, not contradicted). |
+| Q3 | Will the app be used by minors or institutions with data-processing requirements? | College students: assume adults but possibly some under 18; collect no PII. Remaining launch decisions are in docs/privacy.md. |
+| Q4 | Custom domain for production? | No. The URL is https://studyflow-1ir.pages.dev. |
+| Q5 | Install the Ponytail plugin for coding sessions? | No; guidance only. |

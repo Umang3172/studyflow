@@ -50,6 +50,26 @@
       "name": "Build 6: evals, documentation, README",
       "session": "50df2b13-c683-404f-a575-5485affc0513",
       "start": "2026-10-08T11:37:00Z"
+    },
+    {
+      "name": "Build 7: commit and push, Playwright E2E",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T11:58:53Z"
+    },
+    {
+      "name": "Build 8: accessibility audit, CI, privacy notice",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T12:10:38Z"
+    },
+    {
+      "name": "Build 9: deploy, real-model evals and debugging (duplicate-delta fix, guards, tool routing, calibration)",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T12:25:00Z"
+    },
+    {
+      "name": "Build 10: final documentation and verification",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T12:58:10Z"
     }
   ]
 }

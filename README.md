@@ -5,7 +5,7 @@ Studyflow is an AI study coach for students, built on Cloudflare. A student past
 **Stack:** Llama 3.3 70B on Workers AI · Cloudflare Agents SDK (`AIChatAgent` on SQLite-backed Durable Objects) · Workflows · Agent scheduling (Durable Object alarms) · Workers · Pages (React + Vite) · Workers AI Deepgram Nova-3 for speech-to-text.
 
 <!-- stage:start -->
-**Latest captured stage:** MVP built and verified locally with a mock model (93 tests, browser, Pages dev proxy); real Workers AI evals and deployment need the user's Cloudflare login. Not yet committed (transcripts captured up to 2026-10-08T11:43:41Z).
+**Latest captured stage:** MVP deployed at https://studyflow-1ir.pages.dev and verified on real Workers AI (12/12 evals, 10/10 smoke); Playwright E2E, axe accessibility audit, CI and privacy notice added (transcripts captured up to 2026-10-08T13:14:06Z).
 <!-- stage:end -->
 
 ## Architecture
@@ -43,30 +43,36 @@ flowchart LR
 | [PLAN.md](PLAN.md) | Full implementation plan: scope, assumptions, decisions, architecture, data model, flows, interfaces, runtime prompts, token budgets, security, dependencies, tests, deployment, milestones, risks |
 | [HANDOFF.md](HANDOFF.md) | Short brief for the next coding session: state, deviations from the plan, gotchas, open items |
 | [docs/spikes.md](docs/spikes.md) | Results of the M0 spikes S1-S5 and other findings from verifying the current APIs |
-| [apps/api/evals/run.mjs](apps/api/evals/run.mjs) | Golden-prompt evals for the real model (writes `docs/evals.md` with `--write`) |
+| [docs/a11y.md](docs/a11y.md) | Accessibility audit: method, findings, fixes, what still needs a human |
+| [docs/privacy.md](docs/privacy.md) | What is stored, where it goes, deletion, and decisions to make before launching to college students |
+| [apps/api/evals/run.mjs](apps/api/evals/run.mjs) | Golden-prompt evals for the real model, against the deployed app or a dev server (writes `docs/evals.md` with `--write`) |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml) | CI: lint, types, 100 tests and build; Playwright E2E and axe accessibility checks |
 | [docs/dev-phases.json](docs/dev-phases.json) | Phase boundaries for the development token report |
 | [scripts/sync_readme_log.py](scripts/sync_readme_log.py) | Regenerates the stage line, token table and conversation appendix |
 
 ## Status
 
-The MVP is built: onboarding, streaming tutor chat, memory, reminders and daily check-ins, study-plan workflow with approval, live synced state, and push-to-talk dictation (feature-flagged). It runs and is tested **with a deterministic mock model**; it has **not** been run against real Workers AI or deployed, because that needs your Cloudflare login (PLAN A9).
+**Live:** https://studyflow-1ir.pages.dev (deployed 2026-10-08 on your Cloudflare account: Pages SPA + Function → private Worker `studyflow-api` → per-student Durable Objects, Workflows, Workers AI). The Worker has no public URL (`workers_dev: false`); only Pages is public. Everything is anonymous; each student is capped at 40 messages, 3 plans and 300 s of dictation per day.
 
 | Area | Verified how | Not verified |
 | --- | --- | --- |
-| Worker routing, cookies, origin checks, per-student isolation, read-only state | 9 integration tests in workerd | Rate-limit bindings under real load |
-| Chat streaming, tools, approvals, caps, memory, account deletion | 16 integration tests with the mock model (`agent` and `plan` suites) plus the app in a real browser | Llama 3.3 tool-call accuracy and quality (run `apps/api/evals/run.mjs`) |
-| Rolling summary, context and token budgets | Unit tests (budgets asserted) and an integration test that folds 60 long turns | Estimator accuracy vs real token counts (`DIVISOR` in `budget.ts`) |
-| Reminders and check-ins | Integration tests; a reminder fired for real in the browser (toast, chat message, no model call) | Closed-tab notifications (out of scope for the MVP) |
-| Study plans (Workflow, allocator, approval, Mermaid chart) | Unit tests for the allocator and DST; workflow tests; end-to-end in the browser through the Pages dev proxy with the CSP on | `pause`/`resume`/`terminate` of workflows (they do not work under `wrangler dev`) |
-| Voice dictation | Route, protocol handshake and cap check | Microphone capture and Nova-3 transcription in Chrome and Safari |
-| Pages deployment | `wrangler pages dev` with a service binding; `wrangler deploy --dry-run` (3.5 MiB, 697 KiB gzip) | A deployed Pages project |
-| Accessibility | Labels, roles, live regions, keyboard-operable controls | A formal audit (axe, screen reader) |
+| Worker routing, cookies, origin checks, per-student isolation, read-only state | 9 integration tests; cross-origin delete refused in an E2E test | Rate limits under real load |
+| Chat, tools, approvals, caps, memory, deletion, server-side guards | 22 integration tests (mock model) plus the evals below on the real model | |
+| **Real Llama 3.3** (tool calls, dates, refusals, prompt injection) | `apps/api/evals/run.mjs` against the deployed app: **12/12** (see [docs/evals.md](docs/evals.md)); it ranged 8/11 to 12/12 while I fixed what it found, and varies by a case or so between runs | Long-run quality; non-English |
+| Deployed end to end | `apps/api/evals/smoke.mjs`: **10/10** (health, session, WebSocket through Pages, streamed reply without doubled words, "in 2 minutes" reminder fires, real Workflow extracts topics and ignores the grading lines, approval schedules sessions, deletion) | Closed-tab notifications (out of scope) |
+| Rolling summary | Unit and integration tests, and a real-model check: after one fold (586 in / 41 out tokens) the model still recalled a TA's name and a room number planted 6 turns earlier | Summary quality over very long chats |
+| Reminders and check-ins | Integration tests, E2E, and real alarms firing on the deployed app | |
+| Study plans (Workflow, allocator, approval, Mermaid chart) | Allocator and DST unit tests, workflow tests, E2E, the smoke test on the real model | `pause`/`resume`/`terminate` (not supported by `wrangler dev`) |
+| Voice dictation | Route, protocol handshake and caps (tests); you confirmed it on a real device | Safari/Chrome transcription quality is not recorded here |
+| End-to-end UI | 10 Playwright tests (onboarding, chat, a real reminder firing, plan approve/discard, chat-driven plan with approval, memory, two tabs, deletion, origin refusal) in Chrome locally and Chromium in CI | Safari and Firefox |
+| Accessibility | axe-core (WCAG 2.2 A/AA) on every screen in light and dark, desktop and phone; keyboard, 320 px reflow, reduced motion, 200% text. 3 real findings fixed ([docs/a11y.md](docs/a11y.md)) | Screen readers (VoiceOver, NVDA) |
+| CI | GitHub Actions runs lint, types, 131 tests, the build and the Playwright suite on every push and pull request | |
 
-Skipped on purpose (see HANDOFF.md): Playwright E2E, GitHub Actions CI, Web Push, Llama Guard, passkeys, file upload.
+Not done: a Workers AI **spend alert** and the **Workers Paid** plan. Both live in the Cloudflare dashboard (I could not sign in there). Do these before sharing the URL widely: the free allocation is 10,000 neurons per day, and a student at the daily cap uses about 2,600.
 
 ## Quick start
 
-**Prerequisites:** Node 22+ and npm 10 (developed on Node 22.23 and npm 10.9). Python 3 is only needed for `scripts/sync_readme_log.py`. A Cloudflare account and `npx wrangler login` are needed only for real Workers AI and for deploying.
+**Prerequisites:** Node 22+ and npm 10 (developed on Node 22.23 and npm 10.9). Python 3 is only needed for `scripts/sync_readme_log.py`. A Cloudflare account and `npx wrangler login` are needed only to deploy and for real Workers AI.
 
 ```bash
 npm ci   # .npmrc sets legacy-peer-deps=true: npm 10.9's resolver crashes on this dependency tree (docs/spikes.md)
@@ -82,24 +88,26 @@ npm run dev -w apps/web                            # SPA on http://localhost:517
 
 Open http://localhost:5173, complete onboarding and try the app. The mock coach gives canned replies and understands a few phrases so the tool paths run: `remind me 2026-10-09T10:00 to email my TA`, `remember that I like worked examples`, `what's coming up`, and `make me a plan for Operating Systems exam 2026-10-22` (after pasting a topic list, one topic per line).
 
-### Run locally with real Llama 3.3
+### Try the real model
+
+Local `wrangler dev` with the real `ai` binding needs a **workers.dev subdomain registered on the account** (open the Workers page in the dashboard once). Without one, use the deployed app:
 
 ```bash
-npx wrangler login
-# in apps/api/.dev.vars delete the MOCK_AI line (or set MOCK_AI=0), keep SESSION_SECRET
-npm run dev -w apps/api
-npm run dev -w apps/web
-node apps/api/evals/run.mjs --write   # optional: 11 golden prompts, records docs/evals.md
+node apps/api/evals/run.mjs https://studyflow-1ir.pages.dev --write   # 12 golden prompts -> docs/evals.md (about 1,000 neurons)
+node apps/api/evals/smoke.mjs https://studyflow-1ir.pages.dev         # end-to-end checks, about 3 minutes
 ```
 
-Workers AI always runs remotely, so every message spends neurons from your account (the free allocation is 10,000 per day, roughly 40 chat turns).
+Both create throwaway anonymous students and delete them afterwards. With a subdomain registered you can run `npm run dev -w apps/api` (real Workers AI, set `ALLOWED_ORIGINS=http://localhost:5173` in `.dev.vars`, drop `MOCK_AI`) and point the scripts at `http://localhost:8787`.
 
 ### Tests and checks
 
 ```bash
-npm test          # 93 tests in workerd (68 unit, 25 integration); no login needed
-npm run check     # oxlint, oxfmt --check, tsc for the API and the web app
+npm test          # 131 tests in workerd (100 unit, 31 integration); no login needed
+npm run check     # oxlint, oxfmt --check, tsc for the API (after wrangler types) and the web app
+PW_CHANNEL=chrome npm run e2e   # 19 Playwright tests (E2E + axe); uses your installed Chrome. CI uses Playwright's Chromium
 ```
+
+CI (`.github/workflows/ci.yml`) runs all three on every push and pull request.
 
 ### Preview the production wiring locally
 
@@ -109,48 +117,59 @@ npm run dev:mock -w apps/api
 cd apps/web && npx wrangler pages dev dist --port 8788 --service API=studyflow-api-mock   # open http://localhost:8788
 ```
 
-### Deploy (you run these; they use your login and secrets)
+### Deploy
 
 ```bash
 npx wrangler login
-npm run deploy -w apps/api                                                     # Worker studyflow-api
+npm run deploy -w apps/api                                                      # Worker studyflow-api (private)
 openssl rand -base64 32 | npx wrangler secret put SESSION_SECRET --config apps/api/wrangler.jsonc
-npm run build -w apps/web
-cd apps/web && npx wrangler pages deploy dist --project-name studyflow         # Pages + Function + service binding
+cd apps/web && npx wrangler pages project create studyflow --production-branch main   # once; the name must be unique
+npm run build -w apps/web && cd apps/web && npx wrangler pages deploy dist --project-name studyflow --branch main
 ```
 
-Then set `ALLOWED_ORIGINS` in `apps/api/wrangler.jsonc` to your Pages origin (for example `https://studyflow.pages.dev`; preview deployments have other origins) and run `npm run deploy -w apps/api` again. Smoke test: the session cookie is set, the WebSocket connects (101 in DevTools), chat streams, a reminder two minutes ahead fires, and a plan can be approved. Workers Paid is recommended for any public use, and a Workers AI spend alert should be set in the dashboard. Rotating `SESSION_SECRET` signs everyone out and orphans their data.
+The first Worker deploy needs a workers.dev subdomain on the account (a one-time dashboard visit). Pages may give the project a suffixed name (`studyflow-1ir.pages.dev` here because `studyflow` was taken): put the exact origin in `ALLOWED_ORIGINS` in `apps/api/wrangler.jsonc` and redeploy the Worker. Rotating `SESSION_SECRET` signs everyone out and orphans their data. Then run the smoke test above.
 
 ### Configuration
 
-| Name | Where | Default | Purpose |
+| Name | Where | Value | Purpose |
 | --- | --- | --- | --- |
-| `SESSION_SECRET` | secret (`.dev.vars` locally) | none, required | Signs the anonymous session cookie |
-| `ALLOWED_ORIGINS` | `wrangler.jsonc` vars | `http://localhost:5173` | Comma-separated origins allowed to open WebSockets and change state |
+| `SESSION_SECRET` | secret (`.dev.vars` locally) | random | Signs the anonymous session cookie |
+| `ALLOWED_ORIGINS` | `wrangler.jsonc` vars (production), `.dev.vars` (local) | `https://studyflow-1ir.pages.dev` in production | Comma-separated origins allowed to open WebSockets and change state |
 | `DAILY_CHAT_TURNS` / `DAILY_PLAN_STARTS` / `DAILY_VOICE_SECONDS` | vars | 40 / 3 / 300 | Per-student daily caps |
 | `VOICE_ENABLED` | vars | `true` | Hides and rejects voice dictation when not `true` |
 | `MOCK_AI` | `.dev.vars` only | unset | `1` swaps Workers AI for the mock model. Never set it in production. |
 
 ## How it keeps tokens low
 
-| Technique | Where | Numbers |
-| --- | --- | --- |
-| **Compact prompts** | `lib/prompts.ts` | Tutor system prompt about 350 tokens (budget 900). It is static, so Workers AI can prefix-cache it. Six tool schemas fit in 800 tokens; tool results are capped at 400 characters. |
-| **Relevant context only** | `lib/context.ts`, `lib/memory.ts` | A per-turn block built from SQL: local time, courses, active plan, next 5 reminders and at most 15 memories (goal, weak topic, preference, strength, fact; boosted by overlap with the current message), within 1,200 tokens. Rows are dropped, never the header. |
-| **Rolling summary** | `lib/history.ts` | The model sees the summary of older turns plus the newest turns. When verbatim history passes 8,000 tokens, the oldest turns are folded into the summary in one short call, leaving about 4,000 verbatim, so the extra call happens once per roughly 4,000 tokens of new conversation. If the summariser fails, a deterministic extractive summary is used. Clearing the chat clears the summary. |
-| **Validated tool calls** | `lib/tools.ts`, `shared/schemas.ts` | zod validates every tool input before it runs (real date-times, enums, length caps, id format); the server then checks the data (ids exist, time is in the future and within 180 days, caps, 2 memories per turn). Failures return `{ok:false,error}` so the model can correct itself within 4 steps. Cancelling a reminder and starting a plan need the student's approval. Old tool calls are pruned from context. |
-| **No model where code will do** | planner, reminders, check-ins | The study schedule is a deterministic allocator (one LLM call per plan, to read the syllabus). Reminders and the daily check-in are templates: no model call. The plan tool reads a pasted syllabus from the chat history instead of making the model copy up to 12,000 characters into a tool call. |
-| **Hard limits** | `lib/budget.ts` | `maxOutputTokens` 1,024 on every call; estimated input never exceeds 20,000 of the 24,000-token window (oldest turns are dropped first); daily caps per student. |
+All numbers below were measured on Workers AI on 2026-10-08, not estimated.
 
-Under the mock model the first turn of a new student estimates about 500 tokens for system prompt, context and message (measured by the same 3.5 characters-per-token estimator, not a real tokenizer), plus about 750 for tool schemas.
+| Technique | Where | Effect |
+| --- | --- | --- |
+| **Compact prompts** | `lib/prompts.ts`, `lib/tools.ts` | The tutor system prompt is about 300 tokens and static (so it can be prefix-cached). Per-tool rules live in the tool descriptions and are sent only with the tool. Tool results are capped at 400 characters. |
+| **Slim tool schemas** | `lib/tools.ts` (`slim`, `modelSchema`) | The model sees names, types, enums and descriptions only; patterns and length limits are stripped from what it reads but **still enforced by zod on every call**. About 360 tokens saved on every model step. |
+| **Tools only when relevant** | `lib/tools.ts` (`toolsFor`) | Tool definitions (about 1,100 tokens for all six) are sent only when the recent messages look like a request for them (reminder, plan, quiz, schedule, cancel, a stated goal or weak topic); a pending approval keeps its tool. A plain explanation sends none. This also stopped the model writing tool calls into its answers as text. |
+| **Relevant context only** | `lib/context.ts`, `lib/memory.ts` | A per-turn block built from SQL: local time, courses, active plan, next 5 reminders and at most 15 memories (goal, weak topic, preference, strength; boosted by overlap with the current message), within 1,200 tokens. |
+| **Rolling summary** | `lib/history.ts` | The model sees a summary of older turns plus the newest turns. When verbatim history passes 8,000 estimated tokens, the oldest turns are folded into the summary in one short call, leaving about 4,000 verbatim, so the extra call happens once per roughly 4,000 tokens of new conversation. A deterministic fallback summary is used if the call fails; clearing the chat clears it. |
+| **Validated tool calls** | `lib/tools.ts`, `agents/study-agent.ts` | zod validates every input; then the server checks the data: ids exist, times are in the future and within 180 days, daily caps, 2 memories per turn. Three guards exist because the real model misbehaved: a reminder needs the student's own time words (`when`) to appear in the recent chat; after a rejected time it may not guess another in the same turn; a quiz result is refused until enough quiz turns have happened. Cancelling a reminder and starting a plan need your approval. |
+| **No model where code will do** | planner, reminders, check-ins | The schedule comes from a deterministic allocator (one LLM call per plan, to read the syllabus). Reminders and the daily check-in are templates. The plan tool reads a pasted syllabus from chat history instead of making the model copy it. |
+| **Hard limits** | `lib/budget.ts` | `maxOutputTokens` 1,024 on every call; estimated input never exceeds 20,000 of the 24,000-token window; daily caps per student. |
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| Input tokens for a first-turn question (same prompt) | 1,650 | **381** |
+| Input tokens for the same 12 eval prompts, total | 31,593 | **17,892** |
+| Average chat turn on the real model (12 prompts, including multi-step tool turns) | n/a | **1,491 in / 71 out, about 54 neurons** |
+
+The token estimator divides characters by 3.0 (`DIVISOR` in `lib/budget.ts`). It was 3.5 and under-counted a real 4,521-character prompt by 22% (1,650 real tokens), so it was recalibrated; prose actually runs near 4 characters per token, so the estimate errs high, which is the safe direction for a context limit.
 
 ## Project layout
 
 ```text
-apps/api/    Worker "studyflow-api": entry handler, StudyAgent, VoiceInputAgent, StudyPlanWorkflow, lib/*, tests, evals
-apps/web/    Vite + React SPA, Pages Function proxy (functions/), _headers (CSP), wrangler.jsonc for Pages
-packages/shared/   zod schemas, state types, limits, Gantt source (source-only TypeScript, no build step)
-docs/        spikes.md, dev-phases.json (and evals.md once you run the evals)
+apps/api/    Worker "studyflow-api": entry handler, StudyAgent, VoiceInputAgent, StudyPlanWorkflow, lib/*, tests, evals (run.mjs, smoke.mjs)
+apps/web/    Vite + React SPA, Pages Function proxy (functions/), _headers (CSP), Playwright E2E and axe tests (e2e/)
+packages/shared/   zod schemas, state types, limits, Gantt source, leaked-tool-call stripper (source-only TypeScript, no build step)
+docs/        spikes.md, evals.md, a11y.md, privacy.md, dev-phases.json
+.github/     CI workflow
 scripts/     sync_readme_log.py
 ```
 
@@ -170,27 +189,31 @@ These figures cover the AI models used to **build** Studyflow. They come from th
 | Build 3: unit and integration tests | `claude-sonnet-5-5` | 37 | 74 | 84,089 | 12,275,044 | 51,381 |
 | Build 4: web app (React, Pages Function) | `claude-sonnet-5-5` | 9 | 18 | 35,185 | 3,551,018 | 26,443 |
 | Build 5: browser verification, fixes, lint | `claude-sonnet-5-5` | 63 | 126 | 85,402 | 28,231,373 | 46,325 |
-| Build 6: evals, documentation, README | `claude-sonnet-5-5` | 27 | 54 | 48,961 | 14,176,789 | 29,787 |
+| Build 6: evals, documentation, README | `claude-sonnet-5-5` | 29 | 58 | 50,913 | 15,270,120 | 33,394 |
+| Build 7: commit and push, Playwright E2E | `claude-sonnet-5-5` | 23 | 46 | 45,629 | 13,172,032 | 33,798 |
+| Build 8: accessibility audit, CI, privacy notice | `claude-sonnet-5-5` | 25 | 50 | 48,814 | 15,544,284 | 28,658 |
+| Build 9: deploy, real-model evals and debugging (duplicate-delta fix, guards, tool routing, calibration) | `claude-sonnet-5-5` | 50 | 100 | 106,340 | 34,725,458 | 73,175 |
+| Build 10: final documentation and verification | `claude-sonnet-5-5` | 22 | 44 | 47,608 | 17,055,559 | 36,172 |
 | **Total** | `claude-opus-5-5` | **110** | **220** | **352,804** | **17,419,774** | **116,271** |
-| **Total** | `claude-sonnet-5-5` | **204** | **408** | **503,806** | **71,013,617** | **258,471** |
+| **Total** | `claude-sonnet-5-5` | **326** | **652** | **754,149** | **152,604,281** | **433,881** |
 | All phases | WebFetch page-summarizer model | unavailable | unavailable | unavailable | unavailable | unavailable |
 | All phases | Safety classifier passes | unavailable | unavailable | unavailable | unavailable | unavailable |
 <!-- dev-usage:end -->
 
 ## Application runtime usage
 
-These figures cover Studyflow's own Workers AI calls once it runs against the real model. Each call writes one row (feature, model, input and output tokens, audio seconds, estimated neurons; never message content) to the student's `llm_usage` table, which is visible to that student under Settings → AI usage and as live counters in the header and Today panel. This is separate from development usage above.
+Studyflow's own Workers AI calls, separate from development usage above. Each call writes one row (feature, model, input and output tokens, audio seconds, estimated neurons; never message content) to the student's `llm_usage` table, shown to that student under Settings → AI usage.
 
-No real Workers AI call has been made yet (no Cloudflare login was available), so the measured figures are **unavailable**. The mock model also writes rows, but they are not real usage and are not reported here. Estimates from PLAN.md §10 (3.5 characters per token, published prices) are shown for planning only.
+**Measured** on the deployed app by `apps/api/evals/run.mjs` (12 golden prompts, 2026-10-08, final build; real token counts from Workers AI, neurons estimated from the published per-token rates; also in [docs/evals.md](docs/evals.md)):
 
-| Feature | Model | Input tokens | Output tokens | Audio minutes | Neurons |
-| --- | --- | --- | --- | --- | --- |
-| Chat turn | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | unavailable (estimate about 6,000 typical) | unavailable (estimate about 400) | n/a | unavailable (estimate about 242) |
-| Rolling summary | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | unavailable | unavailable (cap 300) | n/a | unavailable |
-| Plan topic extraction | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | unavailable (estimate up to 5,000) | unavailable (cap 1,500) | n/a | unavailable (estimate about 379) |
-| Voice dictation | `@cf/deepgram/nova-3` | n/a | n/a | unavailable | unavailable (estimate about 836 per minute) |
+| Feature | Model | Calls | Input tokens | Output tokens | Audio minutes | Neurons |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| Chat | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 12 | 17,892 | 852 | n/a | 652 |
+| Plan topic extraction | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 1 | 190 | 72 | n/a | 20 |
+| Rolling summary | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 1 (separate check) | 586 | 41 | n/a | about 24 |
+| Voice dictation | `@cf/deepgram/nova-3` | unavailable | n/a | n/a | unavailable (you tested it on a device; those rows are in your own Settings) | unavailable |
 
-After you run it with a real account, replace the table with the totals from Settings → AI usage (or `SELECT feature, sum(input_tokens), sum(output_tokens), sum(neurons_est) FROM llm_usage GROUP BY feature`).
+That is about 54 neurons per average chat turn (PLAN §10 estimated 242), so a student at the 40-message daily cap uses roughly 2,200 to 2,600 neurons, and the free 10,000 per day covers about four such students. Other numbers on this page (first-turn prompt sizes, the 12-prompt before/after totals, the 586/41 summary call) were read from the same `llm_usage` rows during debugging; the smoke test and ad-hoc debugging calls are not included in the table.
 
 ## Appendix
 
@@ -601,7 +624,7 @@ The plan is done and pushed. It's in your new private repo, [Umang3172/studyflow
   - Install Ponytail for coding sessions? (assumed no)
 ```
 
-#### Session 3: `50df2b13` (2026-10-08T10:55:30Z → 2026-10-08T11:43:41Z)
+#### Session 3: `50df2b13` (2026-10-08T10:55:30Z → 2026-10-08T13:14:06Z)
 
 **User** · 2026-10-08T10:55:30Z
 
@@ -976,6 +999,504 @@ The whole chat-driven plan path works in the UI: approval card → "✓ Study pl
 ```
 
 _[tool activity omitted: mcp__Claude_Browser__find ×3, mcp__Claude_Browser__computer ×6, mcp__Claude_Browser__read_page ×1, mcp__Claude_Browser__javascript_tool ×1, mcp__Claude_Browser__preview_stop ×2, Bash ×1]_
+
+**Assistant** · 2026-10-08T11:43:56Z
+
+```text
+I built the MVP and checked it with a mock model, but it has not run against real Workers AI and has not been deployed. Both need your `wrangler login`, and I never handle your credentials. Nothing is committed.
+
+## How I checked it
+- **Automated:** 93 tests pass in workerd (68 unit, 25 integration). Lint, format and typecheck are clean, and `npm ci` from the lockfile reproduces all of it. A production deploy dry-run bundles at 3.5 MiB.
+- **In a browser:**
+  - **Chat and reminders:** chat streams, a reminder fired for real (toast and message, no model call), and the plan approval card works.
+  - **Plans and settings:** plan generation, review and approval work, as do account deletion and re-onboarding. Settings and the voice toggle also work.
+  - **Hosting setup:** this ran through the Vite proxy and through `wrangler pages dev` with the CSP on.
+- **Not verified:** Llama 3.3's real tool-call accuracy, microphone and speech-to-text, and deployed Pages.
+
+## What you asked for
+- **Compact prompts:** the system prompt is about 350 tokens. The six tool schemas fit in 800 tokens and tool results are capped at 400 characters.
+- **Relevant context:** each turn gets only the local time, courses, plan, next reminders and the memories most relevant to the message, within 1,200 tokens.
+- **Rolling summaries:** this is new and wasn't in the plan. Older turns fold into one short summary in a single call roughly every 4,000 tokens of new chat, and clearing the chat clears it.
+- **Validated tool calls:** inputs are checked with zod, then the server checks them against your data (ids exist, times are in the future, caps). Failures go back to the model so it can retry. Cancelling a reminder and starting a plan need your approval.
+
+## Things I found that changed the build
+- `agents@0.27.0` has required peer dependencies the plan didn't list (three MCP packages). npm 10.9's resolver also crashes on this tree, so `.npmrc` sets `legacy-peer-deps=true`.
+- Agent sockets were sending the internal user id to the browser. I turned that off on both agents and added a test.
+- A Suspense boundary in the wrong place blanked the screen after onboarding. It now sits below the connection hook.
+- The plan tool made the model copy the whole syllabus into its call. It now reads the pasted text from chat history.
+- A plan request could be mistaken for the syllabus itself. The pasted text now has to look like a list of at least three items.
+- The allocator made roomy plans look "overloaded". It now gives learning priority over reviews.
+- A test caught Devanagari topic names being stripped from the plan timeline; fixed.
+
+The full list is in [HANDOFF.md](HANDOFF.md) and [docs/spikes.md](docs/spikes.md).
+
+## Docs and tracking
+- [README.md](README.md) has the setup, run, test and deploy steps and a verified-versus-not table. The conversation appendix and development token table are regenerated from the transcripts.
+- **Development usage (this build, Sonnet 5.5):** 204 API calls, 408 uncached input, 503,806 cache write, 71,013,617 cache read, 258,471 output. The planning figures stay as before.
+- **Runtime usage:** marked unavailable until real Workers AI runs; the app records it per call under Settings → AI usage.
+
+## Skipped
+Playwright E2E, GitHub Actions CI, a formal accessibility audit, Web Push, Llama Guard, passkeys and file upload. [HANDOFF.md](HANDOFF.md) has the prioritised next steps.
+
+After you run `wrangler login`, `node apps/api/evals/run.mjs --write` gives real pass rates and token numbers. I can commit and push this whenever you want.
+```
+
+**User** · 2026-10-08T11:51:24Z
+
+```text
+what are the action items on me?
+```
+
+**Assistant** · 2026-10-08T11:51:38Z
+
+```text
+Here's what's on you, in order. Only the `wrangler login` needs your account; everything else is a decision or a command you run.
+
+**Needed before anything real runs**
+1. **Decide on the commit.** Nothing is committed or pushed. Review the changes, then tell me to commit and push, or do it yourself.
+2. **Approve the extra dependencies.** HANDOFF says to ask before adding dependencies beyond PLAN §12, and I added some without asking. Please confirm or push back:
+   - `@modelcontextprotocol/client`, `/sdk` and `/server` are required peers of `agents@0.27.0`.
+   - `@babel/core` is needed by `agents/vite`.
+   - `@ai-sdk/provider`, `@types/react` and `@types/react-dom` are type-only.
+   - `.npmrc` sets `legacy-peer-deps=true` to work around an npm 10.9 resolver crash.
+3. **Run `npx wrangler login`.** This unlocks the real-model run and the deploy.
+
+**Real-model pass (about 15 minutes)**
+4. Copy `apps/api/.dev.vars.example` to `apps/api/.dev.vars`, set `SESSION_SECRET`, and delete the `MOCK_AI` line. (There's already a gitignored `.dev.vars` there from my testing, set up for the mock.)
+5. Run `npm run dev -w apps/api`, then `node apps/api/evals/run.mjs --write` in another terminal. It makes about 20 model calls and spends some of your 10,000 free neurons per day.
+6. Send me `docs/evals.md` and the Settings → AI usage numbers. I'll tune prompts and tool descriptions (reminder dates are the likeliest to need work), calibrate the token estimator, and fill in the README runtime-usage table.
+
+**Deploy**
+7. Run the commands in the README "Deploy" section:
+   - Deploy the Worker, then run `wrangler secret put SESSION_SECRET` yourself.
+   - Build the web app and deploy Pages.
+   - Set `ALLOWED_ORIGINS` to your Pages origin and redeploy the Worker.
+   - Run the smoke test listed there.
+8. Set a Workers AI spend alert in the dashboard. Use Workers Paid for anything public.
+
+**Manual checks I can't do**
+9. Test voice dictation with a real microphone in Chrome and Safari. The route and caps are verified, but the audio path isn't.
+
+**Questions for you (PLAN §20)**
+- **Q3:** will minors or institutions use this? If so, review Cloudflare's Workers AI data-handling terms before launch.
+- **Q4:** do you want a custom domain instead of `studyflow.pages.dev`?
+- **Q1:** if the WebSocket upgrade fails on the deployed Pages project (it passed locally), do we move to Workers Static Assets or use cross-origin auth?
+- **Q5:** do you want the Ponytail plugin installed? I used its principles as written guidance only.
+
+**Optional**
+- Look at the `npm audit` advisories (dev-only `sharp`, and `katex` via Mermaid).
+- Say if you want Playwright E2E, GitHub Actions CI or an accessibility audit, which I skipped.
+```
+
+**User** · 2026-10-08T11:58:53Z
+
+```text
+1. verified the code, commit and push 
+2. approved for usage
+3. Authorization granted to Wrangler
+
+please do it 4 to 8 on your own
+9. verified
+
+Q1 can you give me pros and cons of each 
+Q3 college students
+Q4 no need to custom domain
+Q5 no need now
+
+yes, i want playwright E2E, github actions CI and accessibility audit
+```
+
+**Assistant** · 2026-10-08T11:59:48Z
+
+```text
+Starting with step 1 (commit and push), then the real-model run.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:00:00Z
+
+```text
+Committed and pushed. Wrangler is authenticated; checking which account and scopes, since I'll be deploying there.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:00:21Z
+
+```text
+Account has `workers`, `pages` and `ai` write scopes. Starting the Worker against **real Workers AI** (no `MOCK_AI`) and running the evals.
+```
+
+_[tool activity omitted: Bash ×3]_
+
+**Assistant** · 2026-10-08T12:02:43Z
+
+```text
+Deploy needs a workers.dev subdomain on the account (error 10063), even with `workers_dev: false`. Checking whether Wrangler can set one.
+```
+
+_[tool activity omitted: Bash ×2, mcp__Claude_Browser__navigate ×1, mcp__Claude_Browser__computer ×3]_
+
+**Assistant** · 2026-10-08T12:03:34Z
+
+```text
+Chrome is installed locally, so Playwright can use it without downloading browsers (CI will install its own). Adding Playwright and axe-core.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:04:11Z
+
+```text
+Now the Playwright config and the functional E2E specs.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:06:32Z
+
+```text
+5 of 10 passed. The onboarding form not appearing smells like my own rate limiter (20 sessions/minute per IP, and every test shares one local IP). Checking before changing anything.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:06:37Z
+
+```text
+Confirmed: the friendly "Too many sessions from this network" screen appeared, so the limiter and its error UI work. The mock config (tests only) just needs higher limits; production keeps 20/min.
+```
+
+_[tool activity omitted: Bash ×9]_
+
+**Assistant** · 2026-10-08T12:10:59Z
+
+```text
+The test aborts at the first failing screen. Making it collect every violation across all screens so I get the complete list in one run.
+```
+
+_[tool activity omitted: Bash ×5]_
+
+**Assistant** · 2026-10-08T12:13:42Z
+
+```text
+Confirmed: without the CSS fix axe flags the hovered primary button; with it, clean. Fix restored. Now CI. Checking current versions of the GitHub Actions I'll use.
+```
+
+_[tool activity omitted: Bash ×3]_
+
+**Assistant** · 2026-10-08T12:14:11Z
+
+```text
+Now the privacy side for college students. Checking what Cloudflare actually says about Workers AI data use, so the notice only states what's documented.
+```
+
+_[tool activity omitted: Bash ×5, Write ×1]_
+
+**Assistant** · 2026-10-08T12:16:30Z
+
+```text
+Status: E2E, accessibility audit, privacy notice and CI workflow are written. Running the full local gate, then committing and pushing so the CI workflow gets a real run on GitHub.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:17:14Z
+
+```text
+CI is queued. Watching it while I re-check whether the deploy blocker has cleared.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:20:06Z
+
+```text
+CI caught failures that passed locally, which is exactly its job. Pulling the logs.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:20:26Z
+
+```text
+Two real CI findings. First, `tsc` needs the generated `worker-configuration.d.ts` (it's gitignored), so the typecheck script must generate it. Now the Playwright failure details.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:21:26Z
+
+```text
+Passes locally three times over. Pushing to see what CI's headless Chromium says now, with the better diagnostics in place.
+```
+
+_[tool activity omitted: Bash ×4]_
+
+**Assistant** · 2026-10-08T12:24:34Z
+
+```text
+Smoke-testing the updated runner against the mock server (then discarding the mock report so it can't be mistaken for real results).
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:25:18Z
+
+```text
+Evals runner verified. Now the documentation updates (README status/setup, HANDOFF, PLAN's open-question answers) for everything added in this round.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:25:37Z
+
+```text
+Everything that doesn't touch your Cloudflare account is done and pushed. The deploy is blocked on one thing only you can do, so I'm asking now rather than ending my turn.
+```
+
+_[tool activity omitted: AskUserQuestion ×1]_
+
+**Assistant** · 2026-10-08T12:27:16Z
+
+```text
+No: you don't need to create an application or project. Opening that page is normally enough. Let me test whether the subdomain exists now.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:27:39Z
+
+```text
+The Worker is deployed (no public URL). Now the session secret, generated and piped straight in so I never see it.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:27:47Z
+
+```text
+Secret set. Now the Pages project and the web deploy.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:28:08Z
+
+```text
+The name `studyflow` was already taken globally, so Pages assigned `https://studyflow-1ir.pages.dev`. Updating the allowed origin to match, redeploying the Worker, then deploying Pages.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:28:48Z
+
+```text
+Deployed. Smoke-testing the production URL: health, session cookie, and security headers.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:28:54Z
+
+```text
+The full production chain works (Pages Function → service binding → private Worker). Now the real-model evals against the deployed app.
+```
+
+_[tool activity omitted: Bash ×13, Write ×1]_
+
+**Assistant** · 2026-10-08T12:34:04Z
+
+```text
+Now the regression test: the real provider against a stream in the real Workers AI format, with and without the wrapper (the "without" case is a canary that tells us when upstream fixes the bug).
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:34:28Z
+
+```text
+The offline repro matches production exactly (`"HelloHello there there"`), and the wrapper fixes it. Deploying and re-running the real-model evals.
+```
+
+_[tool activity omitted: Bash ×3]_
+
+**Assistant** · 2026-10-08T12:38:48Z
+
+```text
+Big jump: **8/11 with real Llama 3.3**, and date parsing works ("tomorrow 7pm", "next Monday 9am" both exact). Three failures left; looking at what the model actually did in each.
+```
+
+_[tool activity omitted: Bash ×5]_
+
+**Assistant** · 2026-10-08T12:42:08Z
+
+```text
+Only the three expected tests need updating (the 3.5 divisor, the zod-based size measurement, and the new `when` field). Updating them and adding tests for the new guards.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:42:48Z
+
+```text
+Now integration tests proving each guard actually bites inside the real Durable Object.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:43:27Z
+
+```text
+118 tests pass, including the new guards. Adding two eval cases for the failure modes the real model showed, then redeploying and re-running against real Llama.
+```
+
+_[tool activity omitted: Bash ×4, Write ×1]_
+
+**Assistant** · 2026-10-08T12:49:59Z
+
+```text
+**12/12 on real Llama 3.3.** Quick measurement of what the compaction work bought: the same first-turn prompt that cost 1,650 tokens before.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:51:04Z
+
+```text
+Tests for the routing, including the "pending approval must still resolve" case that would otherwise break human-in-the-loop.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:51:49Z
+
+```text
+124 tests pass. Re-running the E2E suite (tool routing sits in the live chat path), then redeploying and re-measuring on the real model.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:54:00Z
+
+```text
+**381 input tokens** for the same turn that originally cost 1,650 (−77%), with a clean answer and no leaked tool text. E2E still 19/19. Re-running the evals and the smoke test on this version.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T12:57:21Z
+
+```text
+**12/12 evals and 10/10 smoke on real Llama.** Routing also cut chat input tokens for the same 12 prompts from 31,593 to 20,499 (−35%). Now a visual check of the live deployed app in the browser.
+```
+
+_[tool activity omitted: mcp__Claude_Browser__navigate ×1, mcp__Claude_Browser__computer ×2]_
+
+**Assistant** · 2026-10-08T12:57:31Z
+
+```text
+The live site is up with the privacy notice. One real conversation in the browser to see the real model through the full UI.
+```
+
+_[tool activity omitted: mcp__Claude_Browser__find ×1, mcp__Claude_Browser__browser_batch ×1, mcp__Claude_Browser__javascript_tool ×1]_
+
+**Assistant** · 2026-10-08T12:57:56Z
+
+```text
+Now documentation. First the phase boundaries for this second round, from the transcript.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T12:58:19Z
+
+```text
+Gathering exact test counts for the docs.
+```
+
+_[tool activity omitted: Bash ×4, Write ×1]_
+
+**Assistant** · 2026-10-08T13:01:09Z
+
+```text
+Wiring it in: server-side before persistence, client-side at render.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T13:01:18Z
+
+```text
+The formatter had reflowed it. Replacing by the new structure directly.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T13:02:03Z
+
+```text
+130 passing. One more integration test to prove the server really stores assistant text clean.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T13:02:25Z
+
+```text
+Redeploying both halves (API for server-side stripping, Pages for render-time stripping), then one final real-model confirmation.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T13:07:09Z
+
+```text
+11/12 this run. Real-model variance is expected, but I want to see which one and why.
+```
+
+_[tool activity omitted: Bash ×3]_
+
+**Assistant** · 2026-10-08T13:08:47Z
+
+```text
+Three for three now give a refusal plus a concrete offer. Final eval run on this exact build, for the record.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T13:10:25Z
+
+```text
+**12/12 on real Llama 3.3.** Now the documentation pass: README (live URL, verified status, setup, token design with measured numbers, runtime usage), then HANDOFF/PLAN/spikes.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T13:11:45Z
+
+```text
+Counts: 131 tests (100 unit, 31 integration). Fixing those in the README, then rewriting HANDOFF.md for the current state.
+```
+
+_[tool activity omitted: Bash ×1, Write ×1]_
+
+**Assistant** · 2026-10-08T13:12:25Z
+
+```text
+Now the spike log and PLAN's open-question answers, which are out of date.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T13:12:41Z
+
+```text
+Final gates before the last commit: lint/format/types, all 131 tests, and the full Playwright suite.
+```
+
+_[tool activity omitted: Bash ×2]_
 
 <!-- conversation:end -->
 

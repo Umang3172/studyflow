@@ -22,6 +22,7 @@ import {
   planIdInput,
   planRequest,
   profileUpdate,
+  stripLeakedToolCalls,
   type PlanStatus,
   type StudyState,
   type Topic,
@@ -37,7 +38,7 @@ import type { PlanResult } from "../lib/planner.ts";
 import { SUMMARY_SYSTEM, TUTOR_SYSTEM, summaryPrompt } from "../lib/prompts.ts";
 import { checkInMessage, reminderMessage, reminderTime, ReminderError } from "../lib/reminders.ts";
 import { daysBetween, nextLocalOccurrence, utcToLocal } from "../lib/time.ts";
-import { studyTools, type ToolHost } from "../lib/tools.ts";
+import { studyTools, toolsFor, type ToolHost } from "../lib/tools.ts";
 import { LLAMA, NOVA, recordUsage, usageSince, type Feature } from "../lib/usage.ts";
 import type { PlanParams } from "../workflows/study-plan.ts";
 
@@ -79,6 +80,7 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
   initialState = initialStudyState();
   maxPersistedMessages = 400;
   private rememberedThisTurn = 0;
+  private reminderRefused = false; // set after a rejected time: the model must ask the student, not guess another
 
   /** Overridable clock for tests. */
   protected now(): Date {
@@ -114,15 +116,13 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
     super.resetTurnState();
   }
 
-  /** User text is capped on the server too, whatever the client sent. */
+  /** User text is capped on the server too; tool calls the model leaked into its prose never reach storage or its own history. */
   protected sanitizeMessageForPersistence(message: UIMessage): UIMessage {
-    if (message.role !== "user") return message;
-    return {
+    const text = (fn: (t: string) => string): UIMessage => ({
       ...message,
-      parts: message.parts.map((p) =>
-        p.type === "text" && p.text.length > LIMITS.userMessageChars ? { ...p, text: p.text.slice(0, LIMITS.userMessageChars) } : p,
-      ),
-    };
+      parts: message.parts.map((p) => (p.type === "text" ? { ...p, text: fn(p.text) } : p)),
+    });
+    return message.role === "user" ? text((t) => t.slice(0, LIMITS.userMessageChars)) : message.role === "assistant" ? text(stripLeakedToolCalls) : message;
   }
 
   private patch(partial: Partial<StudyState>) {
@@ -178,6 +178,7 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
       }
       this.bump({ chatTurns: 1 });
       this.rememberedThisTurn = 0;
+      this.reminderRefused = false;
     }
 
     const model = chatModel(this.env, this.sessionAffinity);
@@ -198,7 +199,7 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
       model,
       system,
       messages: pruneMessages({ messages: await convertToModelMessages(kept), toolCalls: "before-last-2-messages" }),
-      tools: studyTools(this.toolHost()),
+      tools: this.toolsForTurn(kept),
       stopWhen: isStepCount(4),
       maxOutputTokens: BUDGET.output,
       temperature: 0.5,
@@ -206,6 +207,17 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
       onFinish: ({ totalUsage }) => this.record("chat", totalUsage),
     });
     return result.toUIMessageStreamResponse();
+  }
+
+  /** Only the tools this conversation needs (see toolsFor). */
+  private toolsForTurn(history: UIMessage[]) {
+    const all = studyTools(this.toolHost());
+    const recent = history.slice(-3);
+    const text = recent.map((m) => m.parts.map((p) => (p.type === "text" ? p.text : "")).join(" ")).join("\n");
+    const lastReply = [...recent].reverse().find((m) => m.role === "assistant");
+    const used = (lastReply?.parts ?? []).filter((p) => p.type.startsWith("tool-")).map((p) => p.type.slice(5));
+    const names = toolsFor(text, used);
+    return names.length ? Object.fromEntries(names.map((n) => [n, all[n]])) : undefined;
   }
 
   private async summarize(model: ReturnType<typeof chatModel>, previous: string, transcript: string): Promise<string> {
@@ -255,7 +267,15 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
         return { ok: true, ...remember(this.db, { kind: i.kind, content: i.content, courseId: course }, this.now()) };
       },
       createReminder: async (i) => {
-        const at = reminderTime(i.localDateTime, this.tz, this.now());
+        if (this.reminderRefused) throw new ReminderError("Ask the student for a new time instead of guessing another.");
+        if (!this.studentSaid(i.when)) throw new ReminderError("The student did not give that time. Ask when, then call again quoting their words in 'when'.");
+        let at: Date;
+        try {
+          at = reminderTime(i.localDateTime, this.tz, this.now());
+        } catch (e) {
+          this.reminderRefused = true;
+          throw e;
+        }
         const id = await this.addReminder({ kind: "custom", title: i.title, dueAt: at, source: "chat" });
         return { ok: true, id, at: i.localDateTime };
       },
@@ -273,13 +293,32 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
         };
       },
       cancelReminder: async (id) => ({ ok: await this.cancelReminderById(id) }),
-      startStudyPlan: async ({ topics, ...rest }) => ({ ok: true, ...(await this.beginPlan({ ...rest, material: topics ?? this.pastedMaterial() })) }),
+      startStudyPlan: async ({ topics, ...rest }) => ({
+        ok: true,
+        ...(await this.beginPlan(planRequest.parse({ ...rest, material: topics ?? this.pastedMaterial() }))),
+      }),
       logQuizResult: (i) => {
+        // A result is only valid after the quiz happened: one assistant turn per question has to exist already.
+        const turns = (this.messages as UIMessage[]).slice(-40).filter((m) => m.role === "assistant").length;
+        if (turns < Math.max(2, i.total))
+          throw new Error("The quiz is not finished. Ask the questions one at a time first; call this only after the last answer is graded.");
         this
           .db`INSERT INTO quiz_results (id, topic, course_id, correct, total, created_at) VALUES (${newId()}, ${i.topic}, ${null}, ${i.correct}, ${i.total}, ${this.now().toISOString()})`;
         return { ok: true, memory: applyQuizResult(this.db, i.topic, i.correct, i.total, this.now()) };
       },
     };
+  }
+
+  /** Did the student really say these words in their last two messages? (whitespace, case and punctuation ignored) */
+  private studentSaid(words: string): boolean {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const recent = (this.messages as UIMessage[])
+      .filter((m) => m.role === "user")
+      .slice(-2)
+      .map((m) => m.parts.map((p) => (p.type === "text" ? p.text : "")).join(" "))
+      .join(" ");
+    const needle = norm(words);
+    return needle.length > 0 && norm(recent).includes(needle);
   }
 
   /** Longest recent student message that looks like a topic list (3+ items), used when the model passed no topics. */

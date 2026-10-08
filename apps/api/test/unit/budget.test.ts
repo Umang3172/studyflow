@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { BUDGET, clipToTokens, estimateTokens, fitFromEnd, llamaNeurons } from "../../src/lib/budget.ts";
+import { asSchema } from "ai";
+import { BUDGET, DIVISOR, clipToTokens, estimateTokens, fitFromEnd, llamaNeurons } from "../../src/lib/budget.ts";
 import { buildContext } from "../../src/lib/context.ts";
 import type { Memory } from "../../src/lib/memory.ts";
 import { TUTOR_SYSTEM } from "../../src/lib/prompts.ts";
@@ -16,9 +16,15 @@ const mem = (i: number, kind: Memory["kind"] = "fact", content = `Fact number ${
 });
 
 describe("token budget", () => {
-  it("estimates conservatively (3.5 chars per token)", () => {
-    expect(estimateTokens("a".repeat(35))).toBe(10);
+  it("estimates from the calibrated chars-per-token ratio", () => {
+    expect(DIVISOR).toBe(3.0);
+    expect(estimateTokens("a".repeat(30))).toBe(10);
     expect(estimateTokens("")).toBe(0);
+  });
+
+  it("stays within 15% of the real first-turn prompt measured on Workers AI (4,521 chars = 1,650 tokens)", () => {
+    const estimate = estimateTokens("x".repeat(4521));
+    expect(Math.abs(estimate - 1650) / 1650).toBeLessThan(0.15);
   });
 
   it("fitFromEnd keeps the newest items and always the last one", () => {
@@ -38,14 +44,18 @@ describe("token budget", () => {
     expect(estimateTokens(TUTOR_SYSTEM)).toBeLessThanOrEqual(BUDGET.system);
   });
 
-  it("the six tool schemas stay within the tools budget", () => {
+  it("the six tool schemas, as sent to the model, stay within the tools budget", () => {
     const stub = new Proxy({}, { get: () => () => ({}) }) as ToolHost;
     const tools = studyTools(stub);
     expect(Object.keys(tools)).toHaveLength(6);
     const serialized = JSON.stringify(
-      Object.entries(tools).map(([name, t]) => ({ name, description: t.description, schema: z.toJSONSchema(t.inputSchema as z.ZodType) })),
+      Object.entries(tools).map(([name, t]) => ({
+        type: "function",
+        function: { name, description: t.description, parameters: asSchema(t.inputSchema as never).jsonSchema },
+      })),
     );
     expect(estimateTokens(serialized)).toBeLessThanOrEqual(BUDGET.tools);
+    expect(serialized).not.toMatch(/pattern|additionalProperties|\$schema|maxLength/); // validation-only keywords stay server-side
   });
 
   it("the student context stays within budget even with many memories, and keeps the header", () => {

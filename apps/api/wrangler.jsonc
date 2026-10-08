@@ -21,7 +21,7 @@
     { "name": "CONNECT_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } },
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "https://studyflow.pages.dev",
+    "ALLOWED_ORIGINS": "https://studyflow-1ir.pages.dev",
     "VOICE_ENABLED": "true",
     "DAILY_CHAT_TURNS": "40",
     "DAILY_PLAN_STARTS": "3",

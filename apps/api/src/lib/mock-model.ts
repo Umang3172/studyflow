@@ -25,11 +25,14 @@ const promptChars = (prompt: Prompt) => JSON.stringify(prompt).length;
 export function mockPlan(text: string): { tool?: { name: string; input: unknown }; reply: string } {
   const t = text.toLowerCase();
   const remind = /remind me (?:at|on|tomorrow)?.*?(\d{4}-\d{2}-\d{2}t\d{2}:\d{2})\s*(?:to|:)?\s*(.*)/i.exec(text);
-  if (remind)
-    return {
-      tool: { name: "createReminder", input: { title: remind[2]?.trim() || "Study", localDateTime: remind[1].toUpperCase().replace("T", "T") } },
-      reply: "Reminder set.",
-    };
+  if (remind) {
+    const at = remind[1].toUpperCase();
+    return { tool: { name: "createReminder", input: { title: remind[2]?.trim() || "Study", localDateTime: at, when: at } }, reply: "Reminder set." };
+  }
+  // Misbehaving-model stand-ins, to exercise the server-side guards.
+  if (t.includes("invented reminder"))
+    return { tool: { name: "createReminder", input: { title: "Call mom", localDateTime: "2099-01-01T18:00", when: "next Tuesday at 6pm" } }, reply: "Tried." };
+  if (t.includes("early quiz")) return { tool: { name: "logQuizResult", input: { topic: "deadlocks", correct: 0, total: 5 } }, reply: "Logged." };
   const plan = /make me a plan for (.+?) exam (\d{4}-\d{2}-\d{2})/i.exec(text);
   if (plan) return { tool: { name: "startStudyPlan", input: { courseName: plan[1], examDate: plan[2], minutesPerDay: 90 } }, reply: "Plan started." };
   if (t.includes("remember"))

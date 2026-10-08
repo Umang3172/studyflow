@@ -11,7 +11,8 @@
     "types": "wrangler types",
     "test": "vitest run",
     "typecheck": "wrangler types && tsc --noEmit",
-    "evals": "node evals/run.mjs"
+    "evals": "node evals/run.mjs",
+    "smoke": "node evals/smoke.mjs"
   },
   "dependencies": {
     "@ai-sdk/provider": "4.0.25",

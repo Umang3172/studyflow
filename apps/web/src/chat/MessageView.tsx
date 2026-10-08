@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { getToolApproval } from "@cloudflare/ai-chat/react";
 import { Streamdown } from "streamdown";
+import { stripLeakedToolCalls } from "@studyflow/shared";
 import { plainText } from "../lib/format.ts";
 
 const TOOL_LABEL: Record<string, string> = {
@@ -71,12 +72,14 @@ function ToolCard({ part, onApproval }: { part: ToolPart; onApproval: (id: strin
 
 export function MessageView({ message, onApproval }: { message: UIMessage; timezone: string; onApproval: (id: string, approved: boolean) => void }) {
   const mine = message.role === "user";
-  const text = message.parts.map((p) => (p.type === "text" ? p.text : "")).join("\n");
+  // Tool calls the model leaked into its prose are hidden, even while the message is still streaming.
+  const shown = (t: string) => (mine ? t : stripLeakedToolCalls(t));
+  const text = message.parts.map((p) => (p.type === "text" ? shown(p.text) : "")).join("\n");
   return (
     <article className={`flex flex-col gap-1.5 ${mine ? "items-end" : "items-start"}`} aria-label={mine ? "You" : "Studyflow"}>
       {message.parts.map((p, i) =>
         p.type === "text" ? (
-          p.text && (
+          shown(p.text) && (
             <div
               key={i}
               className={`max-w-[92%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${mine ? "bg-accent text-accent-fg" : "border border-line bg-card"}`}
@@ -85,7 +88,7 @@ export function MessageView({ message, onApproval }: { message: UIMessage; timez
                 <p className="whitespace-pre-wrap break-words">{p.text}</p>
               ) : (
                 <Streamdown className="prose-sm max-w-none break-words [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-2">
-                  {p.text}
+                  {shown(p.text)}
                 </Streamdown>
               )}
             </div>

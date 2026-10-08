@@ -1,8 +1,10 @@
-// Token budgeting for Llama 3.3 (24k context). The estimate is deliberately conservative (3.5 chars/token);
-// calibrate DIVISOR against usage.inputTokens from real calls (docs/evals.md).
+// Token budgeting for Llama 3.3 (24k context). Calibrated against Workers AI on 2026-10-08: a first-turn prompt of
+// 4,521 characters (prose system prompt + JSON tool schemas) was 1,650 real tokens, 2.74 chars/token, while plain
+// English runs about 4. 3.0 keeps the error under 15% on that JSON-heavy mix and over-estimates prose, which is the
+// safe direction for a context limit.
 
-// ponytail: a flat characters-per-token ratio instead of a tokenizer; calibrate against real usage (docs/evals.md).
-export const DIVISOR = 3.5;
+// ponytail: a flat characters-per-token ratio instead of a tokenizer; re-measure if the prompt mix changes a lot.
+export const DIVISOR = 3.0;
 export const estimateTokens = (s: string) => Math.ceil(s.length / DIVISOR);
 
 export const BUDGET = {

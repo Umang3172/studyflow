@@ -137,6 +137,104 @@ describe("chat with the mock model", () => {
   });
 });
 
+describe("server-side guards against a misbehaving model", () => {
+  const asHost = (i: StudyAgent) =>
+    (i as unknown as { toolHost(): { createReminder(x: unknown): Promise<unknown>; logQuizResult(x: unknown): unknown } }).toolHost();
+  const user = (text: string) => ({ id: crypto.randomUUID(), role: "user" as const, parts: [{ type: "text" as const, text }] });
+  const assistant = (text: string) => ({ id: crypto.randomUUID(), role: "assistant" as const, parts: [{ type: "text" as const, text }] });
+
+  it("a reminder time the student never gave is refused (the model cannot invent one)", async () => {
+    const { c, agent } = await setup("UTC");
+    await c.chat("invented reminder please"); // the mock then calls createReminder quoting words that are not in the chat
+    await until(
+      () => c.latestState(),
+      (st) => st.usageToday.chatTurns === 1,
+    );
+    expect(await rows(agent, "SELECT 1 FROM reminders WHERE kind='custom'")).toHaveLength(0);
+    c.close();
+  });
+
+  it("the quoted time may differ in case, spacing and punctuation", async () => {
+    const { c, agent } = await setup("UTC");
+    await db(agent, async (i) => {
+      await i.persistMessages([user("Please remind me Saturday,   at 10 to email my TA")]);
+      expect(await asHost(i).createReminder({ title: "Email TA", localDateTime: inDays(5), when: "saturday at 10" })).toMatchObject({ ok: true });
+    });
+    c.close();
+  });
+
+  it("after a rejected time it will not accept another guess in the same turn", async () => {
+    const { c, agent } = await setup("UTC");
+    await db(agent, async (i) => {
+      await i.persistMessages([user("remind me yesterday at 5pm to submit the form")]);
+      const host = asHost(i);
+      await expect(host.createReminder({ title: "Submit", localDateTime: "2020-01-01T17:00", when: "yesterday at 5pm" })).rejects.toThrow(/past/);
+      await expect(host.createReminder({ title: "Submit", localDateTime: inDays(1), when: "yesterday at 5pm" })).rejects.toThrow(/Ask the student/);
+    });
+    expect(await rows(agent, "SELECT 1 FROM reminders WHERE kind='custom'")).toHaveLength(0);
+    c.close();
+  });
+
+  it("a quiz result is refused before the quiz has happened, accepted after enough graded turns", async () => {
+    const { c, agent } = await setup("UTC");
+    await c.chat("early quiz"); // the mock logs a 0/5 result on the very first message
+    await until(
+      () => c.latestState(),
+      (st) => st.usageToday.chatTurns === 1,
+    );
+    expect(await rows(agent, "SELECT 1 FROM quiz_results")).toHaveLength(0);
+    expect(await rows(agent, "SELECT 1 FROM memories WHERE kind='weak_topic'")).toHaveLength(0);
+    await db(agent, async (i) => {
+      const quiz = Array.from({ length: 5 }, (_, n) => [user(`answer ${n}`), assistant(`question ${n + 1}`)]).flat();
+      await i.persistMessages(quiz);
+      expect(asHost(i).logQuizResult({ topic: "deadlocks", correct: 2, total: 5 })).toMatchObject({ ok: true, memory: "weak" });
+    });
+    c.close();
+  });
+});
+
+describe("what gets stored", () => {
+  it("drops tool calls the model leaked into its prose, and caps over-long user text", async () => {
+    const { c, agent } = await setup("UTC");
+    const leaked = 'Your TA is Marisol.\n\nHere is a function call in JSON format:\n{"name": "createReminder", "parameters": {"title": "Exam"}}';
+    await db(agent, async (i) => {
+      await i.persistMessages([
+        { id: "u1", role: "user", parts: [{ type: "text", text: "x".repeat(20_000) }] },
+        { id: "a1", role: "assistant", parts: [{ type: "text", text: leaked }] },
+      ] as never);
+      const [u, a] = i.messages as Array<{ parts: Array<{ text: string }> }>;
+      expect(u.parts[0].text).toHaveLength(8000);
+      expect(a.parts[0].text).toBe("Your TA is Marisol.");
+    });
+    c.close();
+  });
+});
+
+describe("tool routing inside the agent", () => {
+  const route = (i: StudyAgent, texts: Array<[string, string]>) =>
+    Object.keys(
+      (i as unknown as { toolsForTurn(h: unknown[]): Record<string, unknown> | undefined }).toolsForTurn(
+        texts.map(([role, text]) => ({ id: crypto.randomUUID(), role, parts: [{ type: "text", text }] })),
+      ) ?? {},
+    ).sort();
+
+  it("sends no tools for an explanation, the reminder tool for a reminder, and keeps an approval pending", async () => {
+    const { c, agent } = await setup("UTC");
+    await db(agent, (i) => {
+      expect(route(i, [["user", "Explain how paging works"]])).toEqual([]);
+      expect(route(i, [["user", "Remind me Friday at 5pm to email my TA"]])).toContain("createReminder");
+      const pending = [
+        { id: "u1", role: "user", parts: [{ type: "text", text: "make a plan" }] },
+        { id: "a1", role: "assistant", parts: [{ type: "tool-startStudyPlan", toolCallId: "t1", state: "approval-requested", input: {} }] },
+        { id: "u2", role: "user", parts: [{ type: "text", text: "ok" }] },
+      ];
+      const keys = Object.keys((i as unknown as { toolsForTurn(h: unknown[]): Record<string, unknown> | undefined }).toolsForTurn(pending) ?? {});
+      expect(keys).toContain("startStudyPlan");
+    });
+    c.close();
+  });
+});
+
 describe("rolling summary", () => {
   it("folds old turns into a stored summary once the history budget is exceeded", async () => {
     const { c, agent } = await setup();

@@ -3,16 +3,19 @@ import { createReminderInput, id, listUpcomingInput, logQuizInput, onboardingInp
 
 describe("tool and callable schemas", () => {
   it("createReminder needs a real local date-time, not prose", () => {
-    expect(createReminderInput.safeParse({ title: "Email TA", localDateTime: "2026-10-10T10:00" }).success).toBe(true);
+    const ok = { title: "Email TA", localDateTime: "2026-10-10T10:00", when: "Saturday at 10" };
+    expect(createReminderInput.safeParse(ok).success).toBe(true);
     for (const bad of ["tomorrow 9am", "2026-10-10 10:00", "2026-13-10T10:00", "2026-02-30T10:00", "2026-10-10T25:00"]) {
-      expect(createReminderInput.safeParse({ title: "x", localDateTime: bad }).success, bad).toBe(false);
+      expect(createReminderInput.safeParse({ ...ok, localDateTime: bad }).success, bad).toBe(false);
     }
-    expect(createReminderInput.safeParse({ title: " ", localDateTime: "2026-10-10T10:00" }).success).toBe(false);
+    expect(createReminderInput.safeParse({ ...ok, title: " " }).success).toBe(false);
+    expect(createReminderInput.safeParse({ title: "x", localDateTime: "2026-10-10T10:00" }).success, "when is required").toBe(false);
   });
   it("remember enforces the kind enum and the 280 character cap", () => {
     expect(rememberInput.safeParse({ kind: "weak_topic", content: "paging" }).success).toBe(true);
     expect(rememberInput.safeParse({ kind: "secret", content: "x" }).success).toBe(false);
-    expect(rememberInput.safeParse({ kind: "fact", content: "x".repeat(281) }).success).toBe(false);
+    expect(rememberInput.safeParse({ kind: "goal", content: "x".repeat(281) }).success).toBe(false);
+    expect(rememberInput.safeParse({ kind: "fact", content: "likes tea" }).success, "fact is not offered to the model").toBe(false);
   });
   it("logQuiz coerces numbers and rejects correct > total", () => {
     expect(logQuizInput.parse({ topic: "Paging", correct: "3", total: "5" })).toMatchObject({ correct: 3, total: 5 });

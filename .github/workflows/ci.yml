@@ -15,7 +15,7 @@ concurrency:
 jobs:
   check-and-test:
     name: Lint, types, unit and integration tests, build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -30,7 +30,7 @@ jobs:
 
   e2e:
     name: Playwright E2E and accessibility (axe-core)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
