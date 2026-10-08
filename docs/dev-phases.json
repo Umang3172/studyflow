@@ -1,0 +1,25 @@
+{
+  "_comment": "Phase boundaries for the README dev-usage table. Each transcript record is assigned to the latest phase whose session matches (or is \"*\") and whose start (UTC) is <= the record's timestamp. Add one entry per new phase or coding session, then run scripts/sync_readme_log.py.",
+  "phases": [
+    {
+      "name": "Planning attempt 1: research (stopped by API safeguard)",
+      "session": "8f26e8e1-ee4f-4f5d-ade3-f05b362f04be",
+      "start": "2026-10-08T10:29:00Z"
+    },
+    {
+      "name": "Planning 2a: research (Cloudflare docs, repos, versions)",
+      "session": "1f8482aa-0e87-486f-9fdb-e71cd86c9d72",
+      "start": "2026-10-08T10:36:00Z"
+    },
+    {
+      "name": "Planning 2b: authoring PLAN, HANDOFF, README, tooling",
+      "session": "1f8482aa-0e87-486f-9fdb-e71cd86c9d72",
+      "start": "2026-10-08T10:44:59Z"
+    },
+    {
+      "name": "Planning 2c: verification, Git, GitHub publish",
+      "session": "1f8482aa-0e87-486f-9fdb-e71cd86c9d72",
+      "start": "2026-10-08T10:54:05Z"
+    }
+  ]
+}

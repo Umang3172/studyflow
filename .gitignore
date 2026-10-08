@@ -1,0 +1,41 @@
+# Dependencies and builds
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+worker-configuration.d.ts.bak
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Test output
+playwright-report/
+test-results/
+blob-report/
+
+# Logs and OS / editor files
+*.log
+npm-debug.log*
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
