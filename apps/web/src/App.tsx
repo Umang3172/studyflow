@@ -112,7 +112,11 @@ function Studyflow() {
             <Chat agent={agent} state={state} />
           </Suspense>
         </section>
-        <aside className={`${tab === "chat" ? "hidden md:block" : "block"} min-h-0 overflow-y-auto border-line bg-muted/40 p-4 md:border-l`} aria-label={panel}>
+        <aside
+          className={`${tab === "chat" ? "hidden md:block" : "block"} min-h-0 overflow-y-auto border-line bg-muted/40 p-4 md:border-l`}
+          aria-label={panel}
+          tabIndex={0}
+        >
           <nav className="mb-4 hidden gap-1 md:flex" aria-label="Panels">
             {TABS.filter((t) => t.id !== "chat").map((t) => (
               <button key={t.id} className={`btn ${panel === t.id ? "btn-primary" : ""}`} aria-pressed={panel === t.id} onClick={() => setTab(t.id)}>

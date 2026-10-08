@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "wrangler types && tsc --noEmit",
     "evals": "node evals/run.mjs"
   },
   "dependencies": {

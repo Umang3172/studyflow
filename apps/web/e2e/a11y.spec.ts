@@ -13,7 +13,11 @@ async function scan(page: Page, screen: string, found: string[]) {
   // Colours are sampled mid-transition otherwise (a button that just became "pressed" is still fading in).
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))));
   const results = await new AxeBuilder({ page }).withTags(TAGS).analyze();
-  for (const v of results.violations) found.push(`${screen}: ${v.id} [${v.impact}] ${v.help}: ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`);
+  for (const v of results.violations) {
+    found.push(
+      `${screen}: ${v.id} [${v.impact}] ${v.help}: ${v.nodes.map((n) => `${n.target.join(" ")} ${n.html.slice(0, 140)} (${n.any[0]?.message ?? ""})`).join(" | ")}`,
+    );
+  }
 }
 
 for (const scheme of ["light", "dark"] as const) {
@@ -33,6 +37,8 @@ for (const scheme of ["light", "dark"] as const) {
       await expect(page.getByRole("log").getByText(/Mock coach/)).toBeVisible();
       await send(page, "remember that I like worked examples");
       await expect(page.getByRole("log").getByText("Saved to memory")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0); // reply finished streaming
+      await expect(page.getByRole("button", { name: "Clear chat" })).toBeEnabled();
       await scan(page, "chat with messages", found);
 
       const narrow = (page.viewportSize()?.width ?? 1024) < 768;
