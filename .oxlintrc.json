@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "rules": {
+    "no-unused-expressions": ["error", { "allowTaggedTemplates": true }],
+    "no-new": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/consistent-function-scoping": "off"
+  },
+  "ignorePatterns": ["**/dist/**", "**/.wrangler/**", "**/worker-configuration.d.ts", "node_modules/**"]
+}

@@ -1,0 +1,29 @@
+// Mock twin of wrangler.jsonc: identical except there is NO `ai` binding (that binding always needs a Cloudflare
+// login) and the worker name differs. Used by `npm test` and `npm run dev:mock`, with MOCK_AI=1 in the environment.
+// Keep the durable_objects / migrations / workflows / ratelimits / vars sections in sync with wrangler.jsonc.
+{
+  "name": "studyflow-api-mock",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "StudyAgent", "class_name": "StudyAgent" },
+      { "name": "VoiceInputAgent", "class_name": "VoiceInputAgent" },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StudyAgent", "VoiceInputAgent"] }],
+  "workflows": [{ "name": "study-plan", "binding": "STUDY_PLAN_WORKFLOW", "class_name": "StudyPlanWorkflow" }],
+  "ratelimits": [
+    { "name": "SESSION_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
+    { "name": "CONNECT_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } },
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:8788",
+    "VOICE_ENABLED": "true",
+    "DAILY_CHAT_TURNS": "40",
+    "DAILY_PLAN_STARTS": "3",
+    "DAILY_VOICE_SECONDS": "300",
+  },
+}

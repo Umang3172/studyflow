@@ -1,0 +1,7 @@
+{
+  "name": "studyflow",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-10-08",
+  // Same-origin proxy to the API Worker: cookies stay first-party and WebSocket upgrades pass straight through.
+  "services": [{ "binding": "API", "service": "studyflow-api" }],
+}

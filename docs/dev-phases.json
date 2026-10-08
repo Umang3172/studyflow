@@ -20,6 +20,36 @@
       "name": "Planning 2c: verification, Git, GitHub publish",
       "session": "1f8482aa-0e87-486f-9fdb-e71cd86c9d72",
       "start": "2026-10-08T10:54:05Z"
+    },
+    {
+      "name": "Build 1: verify APIs, scaffold, dependencies",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T10:55:30Z"
+    },
+    {
+      "name": "Build 2: API implementation (libs, agents, workflow, entry)",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T11:01:26Z"
+    },
+    {
+      "name": "Build 3: unit and integration tests",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T11:10:01Z"
+    },
+    {
+      "name": "Build 4: web app (React, Pages Function)",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T11:21:36Z"
+    },
+    {
+      "name": "Build 5: browser verification, fixes, lint",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T11:24:30Z"
+    },
+    {
+      "name": "Build 6: evals, documentation, README",
+      "session": "50df2b13-c683-404f-a575-5485affc0513",
+      "start": "2026-10-08T11:37:00Z"
     }
   ]
 }

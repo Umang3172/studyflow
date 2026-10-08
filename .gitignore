@@ -39,3 +39,4 @@ npm-debug.log*
 # Python
 __pycache__/
 *.pyc
+worker-configuration.d.ts

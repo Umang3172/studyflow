@@ -1,0 +1,5 @@
+{
+  "extends": "agents/tsconfig",
+  "compilerOptions": { "types": ["vite/client"] },
+  "include": ["src", "functions", "vite.config.ts"]
+}

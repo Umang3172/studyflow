@@ -1,8 +1,8 @@
 # Studyflow: MVP Implementation Plan
 
-> Status: **planning complete, implementation not started** (2026-10-08).
+> Status: **MVP implemented and verified locally with a mock model** (2026-10-08). Real Workers AI runs and deployment need the user's Cloudflare login. This document is the original plan; what changed during the build, and why, is in [HANDOFF.md](HANDOFF.md) ("Deviations from PLAN.md") and [docs/spikes.md](docs/spikes.md).
 > Audience: the coding model and human reviewers. Read [HANDOFF.md](HANDOFF.md) first for the short version.
-> Every Cloudflare API, version, price and limit below was checked against developers.cloudflare.com and npm on 2026-10-08. Re-verify anything marked **(spike)** before relying on it.
+> Every Cloudflare API, version, price and limit below was checked against developers.cloudflare.com and npm on 2026-10-08, and the spikes were resolved during the build (docs/spikes.md).
 
 ## Contents
 
