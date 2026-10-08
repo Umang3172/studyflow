@@ -1,4 +1,4 @@
-import { env, runInDurableObject, runDurableObjectAlarm } from "cloudflare:test";
+import { env, evictDurableObject, runInDurableObject, runDurableObjectAlarm } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { Client, newSession, stub, until } from "./helpers.ts";
 import type { StudyAgent } from "../../src/agents/study-agent.ts";
@@ -190,6 +190,25 @@ describe("server-side guards against a misbehaving model", () => {
       expect(asHost(i).logQuizResult({ topic: "deadlocks", correct: 2, total: 5 })).toMatchObject({ ok: true, memory: "weak" });
     });
     c.close();
+  });
+});
+
+describe("waking up", () => {
+  it("a Durable Object that was evicted comes back with the student's profile, courses and reminders intact", async () => {
+    const { c, agent, cookie } = await setup("Asia/Kolkata");
+    await c.chat(`remind me ${inDays(20)} to revise paging`);
+    await until(
+      () => rows(agent, "SELECT 1 FROM reminders WHERE kind='custom'"),
+      (r) => r.length === 1,
+    );
+    c.close();
+    await evictDurableObject(agent); // like an idle eviction: the next request runs the constructor and onStart again
+    const again = await Client.connect(cookie);
+    const state = (await again.waitFor((f) => f.type === "cf_agent_state")).state;
+    expect(state.profile).toMatchObject({ onboarded: true, displayName: "Priya", timezone: "Asia/Kolkata" });
+    expect(state.courses.map((x: { name: string }) => x.name)).toEqual(["Operating Systems"]);
+    expect(state.upcoming.some((u: { title: string }) => u.title === "revise paging")).toBe(true);
+    again.close();
   });
 });
 

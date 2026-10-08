@@ -1,6 +1,6 @@
 # Studyflow Handoff (for the next coding session)
 
-**State (2026-10-08):** the MVP is built, **deployed** and verified on the real model. Live at https://studyflow-1ir.pages.dev (Pages SPA + Function → private Worker `studyflow-api` → Durable Objects, Workflows, Workers AI). Real-model evals: 12/12 ([docs/evals.md](docs/evals.md)); deployed smoke test: 10/10; 131 tests plus 19 Playwright/axe tests pass locally and in CI. Setup, run, test and deploy commands are in [README.md](README.md); spike results in [docs/spikes.md](docs/spikes.md); accessibility in [docs/a11y.md](docs/a11y.md); data handling in [docs/privacy.md](docs/privacy.md). You should not need the build transcript; it is archived in the README appendix.
+**State (2026-10-08):** the MVP is built, **deployed** and verified on the real model. Live at https://studyflow-1ir.pages.dev (Pages SPA + Function → private Worker `studyflow-api` → Durable Objects, Workflows, Workers AI). Real-model evals: 12/12 ([docs/evals.md](docs/evals.md)); deployed smoke test: 10/10; 132 tests plus 19 Playwright/axe tests pass locally and in CI. Setup, run, test and deploy commands are in [README.md](README.md); spike results in [docs/spikes.md](docs/spikes.md); accessibility in [docs/a11y.md](docs/a11y.md); data handling in [docs/privacy.md](docs/privacy.md). You should not need the build transcript; it is archived in the README appendix.
 
 ## What is left (in this order)
 
@@ -29,7 +29,7 @@ apps/api/src/agents/voice-input-agent.ts   dictation; asks StudyAgent for the da
 apps/api/src/workflows/study-plan.ts  extract -> allocate -> save proposal -> wait for approval -> activate
 apps/api/src/lib/                     time, planner, auth, budget, prompts, context, history (rolling summary), memory, reminders,
                                       tools (schemas, routing), extract, usage, db, model, ai-binding (provider workaround), mock-model
-apps/api/test/{unit,integration}/     131 tests in workerd via @cloudflare/vitest-plugin
+apps/api/test/{unit,integration}/     132 tests in workerd via @cloudflare/vitest-plugin
 apps/api/evals/run.mjs, smoke.mjs     real-model golden prompts and an end-to-end smoke test; both take the deployed URL
 apps/api/wrangler.jsonc               production config (remote `ai` binding, no public URL)
 apps/api/wrangler.mock.jsonc          same without `ai` and with high rate limits, for tests, E2E and `npm run dev:mock`
@@ -79,6 +79,7 @@ Workflow that found these: run `apps/api/evals/run.mjs` against the deployed app
 
 - Extend `agents/tsconfig` and never set `experimentalDecorators`. The Vitest config needs the `agents/vite` plugin; the web app does not.
 - `apps/api` `typecheck` runs `wrangler types` first (the generated `worker-configuration.d.ts` is gitignored); CI failed without it.
+- `ensureSession()` is single-flight on purpose: two concurrent first `/api/session` calls (StrictMode double effects in dev, or two tabs opened at once) mint two different anonymous students and the browser keeps the last cookie, which looks like lost data. An E2E test that is flaky under `--repeat-each=24 --workers=4` found it; a plain WebSocket client could not reproduce it.
 - Keep the `Suspense` boundary **below** `useAgent` (above it, React runs the connection hook's cleanup and the screen goes blank).
 - The SDK handles chat-clear before `onMessage`; hook `resetTurnState()` for per-chat state.
 - `destroy()` aborts the Durable Object; the Worker ignores that error, and `deleteAllData()` first waits for any in-flight chat turn.
@@ -106,7 +107,7 @@ If transcripts are not available (another tool, or a different machine), record 
 npm ci
 npm run dev:mock -w apps/api   # Worker :8787 with the mock model (no login)
 npm run dev -w apps/web        # Vite :5173, proxies /agents (ws) and /api
-npm test                       # 131 tests in workerd
+npm test                       # 132 tests in workerd
 npm run check                  # oxlint, oxfmt --check, tsc (api after wrangler types, web)
 PW_CHANNEL=chrome npm run e2e  # 19 Playwright tests (E2E + axe)
 node apps/api/evals/run.mjs https://studyflow-1ir.pages.dev --write   # real-model evals

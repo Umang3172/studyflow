@@ -5,7 +5,7 @@ Studyflow is an AI study coach for students, built on Cloudflare. A student past
 **Stack:** Llama 3.3 70B on Workers AI · Cloudflare Agents SDK (`AIChatAgent` on SQLite-backed Durable Objects) · Workflows · Agent scheduling (Durable Object alarms) · Workers · Pages (React + Vite) · Workers AI Deepgram Nova-3 for speech-to-text.
 
 <!-- stage:start -->
-**Latest captured stage:** MVP deployed at https://studyflow-1ir.pages.dev and verified on real Workers AI (12/12 evals, 10/10 smoke); Playwright E2E, axe accessibility audit, CI and privacy notice added (transcripts captured up to 2026-10-08T13:14:06Z).
+**Latest captured stage:** MVP deployed at https://studyflow-1ir.pages.dev and verified on real Workers AI (12/12 evals, 10/10 smoke); Playwright E2E, axe audit, CI, privacy notice; session race fixed (transcripts captured up to 2026-10-08T15:42:23Z).
 <!-- stage:end -->
 
 ## Architecture
@@ -57,7 +57,7 @@ flowchart LR
 | Area | Verified how | Not verified |
 | --- | --- | --- |
 | Worker routing, cookies, origin checks, per-student isolation, read-only state | 9 integration tests; cross-origin delete refused in an E2E test | Rate limits under real load |
-| Chat, tools, approvals, caps, memory, deletion, server-side guards | 22 integration tests (mock model) plus the evals below on the real model | |
+| Chat, tools, approvals, caps, memory, deletion, server-side guards | 23 integration tests (mock model) plus the evals below on the real model | |
 | **Real Llama 3.3** (tool calls, dates, refusals, prompt injection) | `apps/api/evals/run.mjs` against the deployed app: **12/12** (see [docs/evals.md](docs/evals.md)); it ranged 8/11 to 12/12 while I fixed what it found, and varies by a case or so between runs | Long-run quality; non-English |
 | Deployed end to end | `apps/api/evals/smoke.mjs`: **10/10** (health, session, WebSocket through Pages, streamed reply without doubled words, "in 2 minutes" reminder fires, real Workflow extracts topics and ignores the grading lines, approval schedules sessions, deletion) | Closed-tab notifications (out of scope) |
 | Rolling summary | Unit and integration tests, and a real-model check: after one fold (586 in / 41 out tokens) the model still recalled a TA's name and a room number planted 6 turns earlier | Summary quality over very long chats |
@@ -66,7 +66,7 @@ flowchart LR
 | Voice dictation | Route, protocol handshake and caps (tests); you confirmed it on a real device | Safari/Chrome transcription quality is not recorded here |
 | End-to-end UI | 10 Playwright tests (onboarding, chat, a real reminder firing, plan approve/discard, chat-driven plan with approval, memory, two tabs, deletion, origin refusal) in Chrome locally and Chromium in CI | Safari and Firefox |
 | Accessibility | axe-core (WCAG 2.2 A/AA) on every screen in light and dark, desktop and phone; keyboard, 320 px reflow, reduced motion, 200% text. 3 real findings fixed ([docs/a11y.md](docs/a11y.md)) | Screen readers (VoiceOver, NVDA) |
-| CI | GitHub Actions runs lint, types, 131 tests, the build and the Playwright suite on every push and pull request | |
+| CI | GitHub Actions runs lint, types, 132 tests, the build and the Playwright suite on every push and pull request | |
 
 Not done: a Workers AI **spend alert** and the **Workers Paid** plan. Both live in the Cloudflare dashboard (I could not sign in there). Do these before sharing the URL widely: the free allocation is 10,000 neurons per day, and a student at the daily cap uses about 2,600.
 
@@ -102,7 +102,7 @@ Both create throwaway anonymous students and delete them afterwards. With a subd
 ### Tests and checks
 
 ```bash
-npm test          # 131 tests in workerd (100 unit, 31 integration); no login needed
+npm test          # 132 tests in workerd (100 unit, 32 integration); no login needed
 npm run check     # oxlint, oxfmt --check, tsc for the API (after wrangler types) and the web app
 PW_CHANNEL=chrome npm run e2e   # 19 Playwright tests (E2E + axe); uses your installed Chrome. CI uses Playwright's Chromium
 ```
@@ -193,9 +193,9 @@ These figures cover the AI models used to **build** Studyflow. They come from th
 | Build 7: commit and push, Playwright E2E | `claude-sonnet-5-5` | 23 | 46 | 45,629 | 13,172,032 | 33,798 |
 | Build 8: accessibility audit, CI, privacy notice | `claude-sonnet-5-5` | 25 | 50 | 48,814 | 15,544,284 | 28,658 |
 | Build 9: deploy, real-model evals and debugging (duplicate-delta fix, guards, tool routing, calibration) | `claude-sonnet-5-5` | 50 | 100 | 106,340 | 34,725,458 | 73,175 |
-| Build 10: final documentation and verification | `claude-sonnet-5-5` | 22 | 44 | 47,608 | 17,055,559 | 36,172 |
+| Build 10: final documentation and verification | `claude-sonnet-5-5` | 45 | 90 | 851,976 | 35,047,171 | 57,226 |
 | **Total** | `claude-opus-5-5` | **110** | **220** | **352,804** | **17,419,774** | **116,271** |
-| **Total** | `claude-sonnet-5-5` | **326** | **652** | **754,149** | **152,604,281** | **433,881** |
+| **Total** | `claude-sonnet-5-5` | **349** | **698** | **1,558,517** | **170,595,893** | **454,935** |
 | All phases | WebFetch page-summarizer model | unavailable | unavailable | unavailable | unavailable | unavailable |
 | All phases | Safety classifier passes | unavailable | unavailable | unavailable | unavailable | unavailable |
 <!-- dev-usage:end -->
@@ -624,7 +624,7 @@ The plan is done and pushed. It's in your new private repo, [Umang3172/studyflow
   - Install Ponytail for coding sessions? (assumed no)
 ```
 
-#### Session 3: `50df2b13` (2026-10-08T10:55:30Z → 2026-10-08T13:14:06Z)
+#### Session 3: `50df2b13` (2026-10-08T10:55:30Z → 2026-10-08T15:42:23Z)
 
 **User** · 2026-10-08T10:55:30Z
 
@@ -1494,6 +1494,68 @@ _[tool activity omitted: Bash ×1]_
 
 ```text
 Final gates before the last commit: lint/format/types, all 131 tests, and the full Playwright suite.
+```
+
+_[tool activity omitted: Bash ×3]_
+
+**Assistant** · 2026-10-08T13:18:00Z
+
+```text
+CI is green on the final commit, with one test marked flaky (it passed on retry). Checking which one, so I don't hide it.
+```
+
+_[tool activity omitted: Bash ×2]_
+
+**Assistant** · 2026-10-08T13:18:23Z
+
+```text
+The flaky one is "live state is shared between two tabs". Let me stress it locally to see if it's a real race or just a tight timing in my test.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant** · 2026-10-08T13:19:03Z
+
+```text
+Reproduced: 4 of 15 fail under parallel load, so this is a real race, not CI noise. Finding which assertion.
+```
+
+_[tool activity omitted: Bash ×3]_
+
+**Assistant** · 2026-10-08T13:19:50Z
+
+```text
+Eviction and wake keep the state intact (tested), so that's not it. Instrumenting the failing scenario to see what the second tab actually receives.
+```
+
+_[tool activity omitted: Bash ×1]_
+
+**Assistant (system-generated)** · 2026-10-08T13:20:29Z
+
+```text
+You've hit your session limit · resets 8:30pm (Asia/Calcutta)
+```
+
+**User** · 2026-10-08T15:36:21Z
+
+```text
+Try again
+```
+
+_[tool activity omitted: Bash ×5]_
+
+**Assistant** · 2026-10-08T15:38:52Z
+
+```text
+Status: confirmed a real state-loss bug (onboarding is overwritten with defaults after a Durable Object restart under load). I'm reading how the SDK loads state to find the cause.
+```
+
+_[tool activity omitted: Bash ×8]_
+
+**Assistant** · 2026-10-08T15:40:53Z
+
+```text
+**24/24** (it was failing about a quarter of the time). Root cause confirmed and fixed. Recording it in the HANDOFF, then the full gates, redeploy of the web app, commit and CI.
 ```
 
 _[tool activity omitted: Bash ×2]_
