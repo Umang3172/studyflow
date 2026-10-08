@@ -146,7 +146,7 @@ export function PlanPanel({ agent, state }: { agent: AgentClient; state: StudySt
 
 function SessionList({ sessions, tz, onMark }: { sessions: Session[]; tz: string; onMark?: (id: string, s: "done" | "skipped") => void }) {
   return (
-    <ul className="max-h-72 divide-y divide-line overflow-y-auto text-sm">
+    <ul className="max-h-72 divide-y divide-line overflow-y-auto text-sm" tabIndex={0} aria-label="Study sessions">
       {sessions.map((s) => (
         <li key={s.id} className="flex items-start gap-2 py-1.5">
           <div className="min-w-0 flex-1">

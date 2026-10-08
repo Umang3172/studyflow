@@ -2,3 +2,5 @@
 SESSION_SECRET=change-me-to-a-long-random-string
 # 1 = deterministic mock model instead of Workers AI (tests, demos without a Cloudflare login). Never set in production.
 MOCK_AI=1
+# Local dev origin (production wrangler.jsonc only allows the Pages origin).
+ALLOWED_ORIGINS=http://localhost:5173

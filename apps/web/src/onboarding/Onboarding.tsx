@@ -2,6 +2,7 @@ import { useState } from "react";
 import { LIMITS } from "@studyflow/shared";
 import { errorText, rpc, type AgentClient } from "../lib/agent.ts";
 import { browserTimezone } from "../lib/format.ts";
+import { PrivacyNote } from "./PrivacyNote.tsx";
 
 type Course = { name: string; examDate: string };
 
@@ -32,7 +33,7 @@ export function Onboarding({ agent }: { agent: AgentClient }) {
   const set = (i: number, patch: Partial<Course>) => setCourses((all) => all.map((c, j) => (j === i ? { ...c, ...patch } : c)));
 
   return (
-    <div className="mx-auto flex min-h-full max-w-xl items-center p-4">
+    <main className="mx-auto flex min-h-full max-w-xl items-center p-4">
       <form onSubmit={submit} className="card w-full space-y-4">
         <div>
           <h1 className="text-xl font-semibold">Welcome to Studyflow</h1>
@@ -101,6 +102,7 @@ export function Onboarding({ agent }: { agent: AgentClient }) {
             </datalist>
           </div>
         </div>
+        <PrivacyNote />
         {error && (
           <p className="text-sm text-red-600" role="alert">
             {error}
@@ -110,6 +112,6 @@ export function Onboarding({ agent }: { agent: AgentClient }) {
           {busy ? "Setting up…" : "Start studying"}
         </button>
       </form>
-    </div>
+    </main>
   );
 }

@@ -10,7 +10,8 @@
     "dev:api": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
     "test": "npm test -w apps/api",
-    "check": "oxlint && oxfmt --check . && npm run typecheck -w apps/api && npm run typecheck -w apps/web"
+    "check": "oxlint && oxfmt --check . && npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "e2e": "playwright test --config apps/web/playwright.config.ts"
   },
   "devDependencies": {
     "oxfmt": "0.72.0",

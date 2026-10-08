@@ -19,7 +19,7 @@ export function Chat({ agent, state }: { agent: AgentClient; state: StudyState }
 
   return (
     <>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" role="log" aria-live="polite" aria-label="Conversation">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" role="log" aria-live="polite" aria-label="Conversation" aria-busy={busy} tabIndex={0}>
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
           {messages.length === 0 && (
             <div className="card text-sm text-muted-fg">

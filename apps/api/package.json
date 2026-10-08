@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "dev:mock": "wrangler dev -c wrangler.mock.jsonc",
+    "dev:e2e": "rm -rf .wrangler/e2e && wrangler dev -c wrangler.mock.jsonc --port 8787 --persist-to .wrangler/e2e --var MOCK_AI:1 --var SESSION_SECRET:e2e-secret-e2e-secret-e2e-secret-00 --var ALLOWED_ORIGINS:http://localhost:5173",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "test": "vitest run",

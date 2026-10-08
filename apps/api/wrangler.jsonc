@@ -3,6 +3,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-08",
   "compatibility_flags": ["nodejs_compat"],
+  // No public URL: the Worker is reachable only through the Pages service binding (apps/web/wrangler.jsonc).
+  "workers_dev": false,
+  "preview_urls": false,
   "observability": { "enabled": true },
   "ai": { "binding": "AI" },
   "durable_objects": {
@@ -18,7 +21,7 @@
     { "name": "CONNECT_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } },
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:5173",
+    "ALLOWED_ORIGINS": "https://studyflow.pages.dev",
     "VOICE_ENABLED": "true",
     "DAILY_CHAT_TURNS": "40",
     "DAILY_PLAN_STARTS": "3",

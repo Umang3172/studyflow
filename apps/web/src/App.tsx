@@ -20,9 +20,9 @@ const TABS: Array<{ id: Tab; label: string; icon: string }> = [
 ];
 
 const Splash = ({ text }: { text: string }) => (
-  <div className="grid h-full place-items-center p-6 text-center text-muted-fg" role="status">
+  <main className="grid h-full place-items-center p-6 text-center text-muted-fg" role="status">
     {text}
-  </div>
+  </main>
 );
 
 export default function App() {

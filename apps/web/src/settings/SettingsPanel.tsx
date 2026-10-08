@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { LIMITS, type StudyState } from "@studyflow/shared";
 import { errorText, rpc, type AgentClient } from "../lib/agent.ts";
 import { deleteAccount } from "../lib/session.ts";
+import { PrivacyNote } from "../onboarding/PrivacyNote.tsx";
 
 type UsageRow = { feature: string; model: string; calls: number; input_tokens: number; output_tokens: number; audio_seconds: number; neurons: number };
 
@@ -158,9 +159,10 @@ export function SettingsPanel({ agent, state }: { agent: AgentClient; state: Stu
         )}
       </section>
 
-      <section className="card">
-        <h2 className="mb-1 text-sm font-semibold">Your data</h2>
-        <p className="mb-3 text-xs text-muted-fg">
+      <section className="card space-y-3">
+        <h2 className="text-sm font-semibold">Your data</h2>
+        <PrivacyNote />
+        <p className="text-xs text-muted-fg">
           Everything is stored against this browser's anonymous session. Deleting removes your chat, memories, plans and reminders for good.
         </p>
         <button className="btn btn-danger" onClick={wipe}>

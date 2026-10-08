@@ -9,7 +9,7 @@ const DAY = 86_400_000;
 /** Validate a student-supplied local date-time and convert it to the UTC instant to schedule. */
 export function reminderTime(localDateTime: string, timezone: string, now: Date): Date {
   const at = localToUtc(localDateTime, timezone);
-  if (at.getTime() < now.getTime() + MIN) throw new ReminderError("That time is in the past. Ask the student for a future time.");
+  if (at.getTime() <= now.getTime()) throw new ReminderError("That time is in the past. Ask the student for a future time.");
   if (at.getTime() > now.getTime() + LIMITS.reminderMaxDays * DAY) throw new ReminderError(`Reminders can be at most ${LIMITS.reminderMaxDays} days ahead.`);
   return at;
 }

@@ -651,6 +651,7 @@ export class StudyAgent extends AIChatAgent<Cloudflare.Env, StudyState> {
   // ---------- account ----------
   /** Called by the Worker for POST /api/account/delete. Cancels everything, then wipes all storage. */
   async deleteAllData() {
+    await this.waitUntilStable({ timeout: 5_000 }); // let an in-flight chat turn finish so its keep-alive is released before the wipe
     for (const s of await this.listSchedules()) await this.cancelSchedule(s.id);
     for (const p of this.db<PlanRow>`SELECT * FROM plans WHERE workflow_id IS NOT NULL AND status IN ('generating','awaiting_approval')`) {
       try {

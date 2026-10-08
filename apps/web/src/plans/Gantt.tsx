@@ -29,5 +29,5 @@ export function Gantt({ items }: { items: GanttItem[] }) {
   }, [source, id]);
 
   if (failed) return <p className="text-xs text-muted-fg">Timeline preview unavailable; the session list below has everything.</p>;
-  return <div ref={ref} className="overflow-x-auto" role="img" aria-label="Study timeline chart" />;
+  return <div ref={ref} className="overflow-x-auto" role="img" aria-label="Study timeline chart" tabIndex={0} />;
 }

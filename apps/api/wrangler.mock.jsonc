@@ -1,6 +1,7 @@
 // Mock twin of wrangler.jsonc: identical except there is NO `ai` binding (that binding always needs a Cloudflare
 // login) and the worker name differs. Used by `npm test` and `npm run dev:mock`, with MOCK_AI=1 in the environment.
-// Keep the durable_objects / migrations / workflows / ratelimits / vars sections in sync with wrangler.jsonc.
+// Keep the durable_objects / migrations / workflows / vars sections in sync with wrangler.jsonc. The rate limits are raised
+// here on purpose: every local test and E2E session shares one IP, so production limits would throttle the suite.
 {
   "name": "studyflow-api-mock",
   "main": "src/index.ts",
@@ -16,8 +17,8 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StudyAgent", "VoiceInputAgent"] }],
   "workflows": [{ "name": "study-plan", "binding": "STUDY_PLAN_WORKFLOW", "class_name": "StudyPlanWorkflow" }],
   "ratelimits": [
-    { "name": "SESSION_LIMITER", "namespace_id": "1001", "simple": { "limit": 20, "period": 60 } },
-    { "name": "CONNECT_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } },
+    { "name": "SESSION_LIMITER", "namespace_id": "1001", "simple": { "limit": 1000, "period": 60 } },
+    { "name": "CONNECT_LIMITER", "namespace_id": "1002", "simple": { "limit": 1000, "period": 60 } },
   ],
   "vars": {
     "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:8788",
